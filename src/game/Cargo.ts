@@ -1,19 +1,10 @@
 import Phaser from 'phaser';
-import { PALETTE, hex } from '../config/palette';
 import type { Tuning } from '../config/tuning';
 import { waterY } from './Sea';
 import type { PlacementResult } from './placement';
 
 export type CargoType = keyof Tuning['cargo'];
 export type CargoState = 'FLOATING' | 'CARRIED' | 'SETTLING' | 'STACKED';
-
-const FILL: Record<CargoType, string> = {
-  crate: PALETTE.crate,
-  wide: PALETTE.wide,
-  barrel: PALETTE.barrel,
-  gold: PALETTE.gold,
-  piano: PALETTE.piano,
-};
 
 const BOB_AMP = 4;
 const BOB_PERIOD = 3;
@@ -40,7 +31,7 @@ export class Cargo {
   stackedLocal: { x: number; y: number; angle: number } | null = null;
   readonly w: number;
   readonly h: number;
-  private gfx: Phaser.GameObjects.Rectangle;
+  private gfx: Phaser.GameObjects.Image;
   private x = 0;
   private y = 0;
   private angle = 0;
@@ -57,7 +48,7 @@ export class Cargo {
     this.h = def.h;
     this.phase = baseX * 0.05;
     this.x = baseX;
-    this.gfx = scene.add.rectangle(baseX, 0, this.w, this.h, hex(FILL[type])).setDepth(9);
+    this.gfx = scene.add.image(baseX, 0, `cargo_${type}`).setDepth(9);
   }
 
   get points(): number {

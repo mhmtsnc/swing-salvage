@@ -1,7 +1,6 @@
 import Phaser from 'phaser';
 import { getTuning, type Tuning } from '../config/tuning';
 import { PALETTE } from '../config/palette';
-import { STRINGS, fmt } from '../config/strings';
 import { createRng } from '../core/rng';
 import { FixedStepper, STEP_MS, toStepAcc } from '../core/time';
 import { getItem, setItem } from '../core/storage';
@@ -84,14 +83,25 @@ export class GameScene extends Phaser.Scene {
 
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
       const s = this.run.state;
-      if (s === 'READY') this.run.start();
+      if (this.blockedByUi(p.x, p.y)) return;
+      if (s === 'READY') {
+        this.run.start();
+        this.game.events.emit('ss:started');
+      }
       if (s === 'READY' || s === 'PLAYING' || s === 'SWAPPING') this.heli.pointerDown(p.x, p.y);
     });
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
-      if (p.isDown) this.heli.pointerMove(p.x, p.y);
+      if (!p.isDown) return;
+      this.heli.pointerMove(p.x, p.y);
+      this.game.events.emit('ss:dragMove');
     });
     this.input.on('pointerup', () => this.heli.pointerUp());
     this.game.events.on('ss:again', this.again, this);
+    this.game.events.on('ss:pause', this.pauseGame, this);
+    this.game.events.on('ss:resume', this.resumeGame, this);
+    this.game.events.on('ss:home', this.home, this);
+    this.game.events.on('ss:paint', this.onPaint, this);
+    document.addEventListener('visibilitychange', this.onVisibility);
 
     if (q.get('debug') === '1') {
       this.matter.world.createDebugGraphic();
@@ -104,6 +114,11 @@ export class GameScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.scale.off(Phaser.Scale.Events.RESIZE, this.onResize, this);
       this.game.events.off('ss:again', this.again, this);
+      this.game.events.off('ss:pause', this.pauseGame, this);
+      this.game.events.off('ss:resume', this.resumeGame, this);
+      this.game.events.off('ss:home', this.home, this);
+      this.game.events.off('ss:paint', this.onPaint, this);
+      document.removeEventListener('visibilitychange', this.onVisibility);
     });
   }
 
@@ -140,15 +155,66 @@ export class GameScene extends Phaser.Scene {
       onGustStart: (dir) => this.game.events.emit('ss:gustStart', dir),
       onGustEnd: () => this.game.events.emit('ss:gustEnd'),
       onLightning: (x) => {
-        this.weatherFx.lightning(x, this.W, this.seaY);
+        this.weatherFx.lightning(x, this.W);
         this.game.events.emit('ss:lightning');
       },
       onThunder: () => this.game.events.emit('ss:thunder'),
     });
   }
 
-  private emit(text: string, kind: 'perfect' | 'steady' | 'ship'): void {
-    this.game.events.emit('ss:banner', { text, kind });
+  /** UIScene'in yayınladığı dokunma alanları ve modal bayrağı: arkadaki oyun girdiyi görmesin. */
+  private blockedByUi(x: number, y: number): boolean {
+    if (this.registry.get('ss:modal')) return true;
+    const rects = (this.registry.get('ss:uiRects') as { x: number; y: number; w: number; h: number }[] | undefined) ?? [];
+    return rects.some((r) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h);
+  }
+
+  private onVisibility = (): void => {
+    if (document.hidden) this.pauseGame();
+  };
+
+  pauseGame(): void {
+    if (!this.run.pause()) return;
+    this.tweens.pauseAll();
+    this.heli.pointerUp();
+    this.game.events.emit('ss:paused');
+  }
+
+  resumeGame(): void {
+    if (!this.run.resume()) return;
+    this.tweens.resumeAll();
+    this.stepper.reset();
+  }
+
+  /** Başlık ekranına dön (HOME). */
+  home(): void {
+    if (this.run.state !== 'PAUSED' && this.run.state !== 'GAME_OVER') return;
+    this.tweens.resumeAll();
+    this.resetWorld();
+    this.run.reset('READY', this.startScore);
+    this.game.events.emit('ss:homed');
+  }
+
+  private onPaint(id: string): void {
+    this.heli.setPaint(id);
+  }
+
+  /** Onboarding için: dünya koordinatları. */
+  get heliPos(): { x: number; y: number } {
+    return { x: this.heli.x, y: this.heli.y };
+  }
+
+  isCarrying(): boolean {
+    return this.active?.state === 'CARRIED';
+  }
+
+  floatingCargoTop(): { x: number; y: number } | null {
+    const c = this.active;
+    return c && c.state === 'FLOATING' ? c.topCenter() : null;
+  }
+
+  slotPositions(): { x: number; y: number }[] {
+    return slotCentersWorld(this.ship.pose(), this.ship.params);
   }
 
   private stackBodies(): MatterJS.BodyType[] {
@@ -278,7 +344,8 @@ export class GameScene extends Phaser.Scene {
     const hp = this.rope.hook.position;
     if (Math.hypot(hp.x - top.x, hp.y - top.y) < this.T.hook.pickupRadius) {
       c.pickUp(this.matter, this.simTime);
-      this.rope.attach(c.body as MatterJS.BodyType, { x: 0, y: -c.h / 2 });
+      this.rope.attach(c.body as MatterJS.BodyType, { x: 0, y: -c.h / 2 }, c.w / 2);
+      this.game.events.emit('ss:hooked');
     }
   }
 
@@ -344,8 +411,15 @@ export class GameScene extends Phaser.Scene {
       const loc = worldToShip(pose, this.ship.params, c.body.position);
       c.stackedLocal = { x: loc.x, y: loc.y, angle: c.body.angle - pose.angle };
       const res = this.run.onStacked(c.points, c.placement?.perfect ?? false);
-      if (res.perfect) this.emit(STRINGS.perfect, 'perfect');
-      if (res.steady) this.emit(STRINGS.steady, 'steady');
+      this.game.events.emit('ss:placed', {
+        x: c.body.position.x,
+        y: c.body.position.y,
+        gained: res.gained,
+        perfect: res.perfect,
+        steady: res.steady,
+        streak: res.streak,
+        hard: c.placement?.hard ?? false,
+      });
     }
   }
 
@@ -420,7 +494,7 @@ export class GameScene extends Phaser.Scene {
     if (this.run.state !== 'PLAYING' || !this.run.shipFull) return;
     if (this.cargos.some((c) => c.state === 'SETTLING' || c.state === 'FLOATING' || c.state === 'CARRIED')) return;
     const bonus = this.run.beginSwap();
-    this.emit(fmt(`${STRINGS.shipFull} +{n}`, { n: bonus }), 'ship');
+    this.game.events.emit('ss:shipFull', { bonus });
 
     const s = this.T.ship;
     const old = this.ship;
@@ -487,7 +561,7 @@ export class GameScene extends Phaser.Scene {
       c.updateFloating(this.simTime, this.seaY, this.waveAmp);
       c.sync();
     }
-    this.heli.render();
+    this.heli.render(delta / 1000);
     this.rope.draw();
     const dRain = difficultyAt(run.score).rain;
     this.rainLevel += Phaser.Math.Clamp(dRain - this.rainLevel, -delta / 1000, delta / 1000);

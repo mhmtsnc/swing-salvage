@@ -28,3 +28,12 @@ F4 · Ani rüzgâr yönü · +1 = sağa eser (soldan gelir, şeritler sol kenard
 F4 · Donma · SWAPPING'de sadece aralık sayacı durur, devam eden ani rüzgâr biter, şimşek sürer · "zamanlayıcı durur"
 F4 · Hava adımı · Weather READY'de çalışmaz; PLAYING/SWAPPING/FAILING'de çalışır (FAILING yavaş çekimde) · başlamadan ani rüzgâr gelmesin
 F4 · Yağmur dokusu · rain_a/rain_b kodla üretilen 256 px döşeme; kayma (−90,520) ve (−60,380), alfa rain×1,0 ve ×0,6 · §10.4
+F5 · Tarayıcı kontrolü · CLAUDE.md gereği tarayıcıda çalıştırılmadı; render/UI kodu sadece derleme ve birim testlerle doğrulandı · görsel kontrolü kullanıcı yapacak
+F5 · Boya kimlikleri · rescue/sunny/mint/navy/paper/gold (§15.1), renkler §15.1'den; `strings.paints.red` → `rescue` · GDD §15.1 ile tutarlılık
+F5 · Helikopter orijini · Doku yerel (0,0) noktası fizik merkezi; ana rotor (0,−46), kuyruk rotoru (126,−16), flip tüm konteynerde scaleX ile · burun sola bakar, mockup yerel koordinatları birebir
+F5 · Gemi görseli · Tek `ship` dokusu (deckY = 0 referansı) gemi konteynerine görsel olarak bağlanır; direk fizik değil · F2 CRASH hâlâ AABB
+F5 · Askı çizgileri · Taşınan kargoda kanca 14 px yukarıda çizilir, iki askı üst köşelere iner (mockup) · fizik halat ucu kargonun üst-orta noktasında kalır
+F5 · UI girdi yalıtımı · UIScene dokunma dikdörtgenlerini ve modal bayrağını registry'ye yazar, GameScene bunlarla girdiyi süzer · iki sahne aynı dokunmayı görüyor
+F5 · Daily ve SHARE · Butonlar/olaylar (ss:daily, ss:share) hazır; asıl bağlantı F7 · F5 kapsamı dışı
+F5 · Hangar · Kilit mantığı saf `core/unlocks.ts` (testli); ilerleme `ss.stats`/`ss.daily`'den okunur · HANGAR gerçek kilitle çalışsın
+F5 · Madalya (geçici) · Game over madalyası skor eşiğinden hesaplanır; "ilk kez kazanılan" mesajı F7 · stats F7'de güncellenir

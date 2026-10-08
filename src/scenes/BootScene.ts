@@ -1,4 +1,6 @@
 import Phaser from 'phaser';
+import { makeAllTextures } from '../art/textures';
+import { getTuning } from '../config/tuning';
 import '@fontsource/fredoka/500.css';
 import '@fontsource/fredoka/600.css';
 import '@fontsource/fredoka/700.css';
@@ -10,6 +12,7 @@ export class BootScene extends Phaser.Scene {
 
   create(): void {
     const start = (): void => {
+      makeAllTextures(this, getTuning());
       if (new URLSearchParams(location.search).get('debug') === 'stack') {
         this.scene.launch('StackDebugScene');
       } else {

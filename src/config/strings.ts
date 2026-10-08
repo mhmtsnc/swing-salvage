@@ -47,7 +47,7 @@ export const STRINGS = {
   dailyBtn: '#{n} · {k} left',
   medals: { bronze: 'BRONZE', silver: 'SILVER', gold: 'GOLD', platinum: 'PLATINUM' },
   paints: {
-    red: 'RESCUE RED',
+    rescue: 'RESCUE RED',
     sunny: 'SUNNY',
     mint: 'MINT',
     navy: 'NAVY',

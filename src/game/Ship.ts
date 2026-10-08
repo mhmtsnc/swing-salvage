@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { PALETTE, hex } from '../config/palette';
+import { PAD, SHIP_TEX } from '../art/textures';
 import type { Tuning } from '../config/tuning';
 import {
   deckY, pivotRest, shipParts, shipPose, shipToWorld,
@@ -38,7 +38,7 @@ export class Ship {
 
     const pv = pivotRest(seaY, t.ship);
     this.container = scene.add.container(pv.x, pv.y).setDepth(7);
-    this.container.add(this.drawHull(pv));
+    this.container.add(this.makeImage(pv));
   }
 
   get params(): ShipParams {
@@ -80,26 +80,11 @@ export class Ship {
     this.container.destroy();
   }
 
-  // Geçici çizim: yerel koordinat = dinlenme dünyası − dönme merkezi.
-  private drawHull(pv: { x: number; y: number }): Phaser.GameObjects.Graphics {
-    const { seaY, t } = this;
-    const s = t.ship;
-    const dy = deckY(seaY, s);
-    const parts = shipParts(seaY, s);
-    const g = this.scene.add.graphics();
-    const rect = (color: string, x0: number, y0: number, w: number, h: number) => {
-      g.fillStyle(hex(color), 1);
-      g.fillRect(x0 - pv.x, y0 - pv.y, w, h);
-    };
-    rect(PALETTE.hull, parts.hull.cx - parts.hull.w / 2, parts.hull.cy - parts.hull.h / 2, parts.hull.w, parts.hull.h);
-    rect(PALETTE.hullStripe, -40, dy + 14, 328, 3);
-    rect(PALETTE.deck, s.deckLeftX, dy - 3, s.deckRightX - s.deckLeftX, 3);
-    rect(PALETTE.bridge, parts.bridge.cx - parts.bridge.w / 2, parts.bridge.cy - parts.bridge.h / 2, parts.bridge.w, parts.bridge.h);
-    rect(PALETTE.roof, s.bridgeLeftX - 4, dy - s.bridgeHeight - 6, s.deckLeftX - s.bridgeLeftX + 8, 6);
-    rect(PALETTE.ink, s.mastX - 2, dy - s.mastHeight, 4, s.mastHeight - s.bridgeHeight);
-    rect(PALETTE.roof, s.mastX - 5, dy - s.mastHeight - 4, 10, 6);
-    rect(PALETTE.hull, parts.lip.cx - parts.lip.w / 2, parts.lip.cy - parts.lip.h / 2, parts.lip.w, parts.lip.h);
-    for (const cx of s.slotCentersX) rect(PALETTE.uiTeal, cx - 12, dy - 4, 24, 4);
-    return g;
+  /** Pişirilmiş gemi dokusu (art/textures.ts), dönme merkezine göre konumlandırılır. */
+  private makeImage(pv: { x: number; y: number }): Phaser.GameObjects.Image {
+    const dy = deckY(this.seaY, this.t.ship);
+    return this.scene.add
+      .image(SHIP_TEX.x0 - PAD - pv.x, dy + SHIP_TEX.y0 - PAD - pv.y, 'ship')
+      .setOrigin(0, 0);
   }
 }

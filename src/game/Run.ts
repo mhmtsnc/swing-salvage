@@ -24,8 +24,8 @@ export class Run {
   delivered = 0;
   perfects = 0;
   failKind: FailKind | null = null;
-  /** SWAPPING/PAUSED öncesi durum */
-  private before: RunState = 'PLAYING';
+  /** PAUSED öncesi durum */
+  private pausedFrom: RunState = 'PLAYING';
 
   constructor(private t: Tuning) {}
 
@@ -78,7 +78,6 @@ export class Run {
   }
 
   beginSwap(): number {
-    this.before = this.state;
     this.state = 'SWAPPING';
     this.score += this.t.ship.shipBonus;
     return this.t.ship.shipBonus;
@@ -105,7 +104,17 @@ export class Run {
     return this.stacked >= this.quota;
   }
 
-  resumeState(): RunState {
-    return this.before;
+  /** PLAYING/SWAPPING iken duraklatır. Değişiklik olduysa true. */
+  pause(): boolean {
+    if (this.state !== 'PLAYING' && this.state !== 'SWAPPING') return false;
+    this.pausedFrom = this.state;
+    this.state = 'PAUSED';
+    return true;
+  }
+
+  resume(): boolean {
+    if (this.state !== 'PAUSED') return false;
+    this.state = this.pausedFrom;
+    return true;
   }
 }

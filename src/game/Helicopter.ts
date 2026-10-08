@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
-import { PALETTE, hex } from '../config/palette';
+import { HELI_ORIGIN, HELI_ROTOR_POS, HELI_TAIL_POS } from '../art/textures';
+import { getItem } from '../core/storage';
 import type { Tuning } from '../config/tuning';
 
 const DT = 1 / 60;
@@ -23,15 +24,23 @@ export class Helicopter {
   facing = -1;
   private fingerStart: { x: number; y: number } | null = null;
   private targetStart = { x: 0, y: 0 };
-  private gfx: Phaser.GameObjects.Graphics;
+  private root: Phaser.GameObjects.Container;
+  private bodyImg: Phaser.GameObjects.Image;
+  private rotor: Phaser.GameObjects.Image;
+  private arcs: Phaser.GameObjects.Image;
+  private tail: Phaser.GameObjects.Image;
+  private rotorT = 0;
 
   constructor(
     scene: Phaser.Scene,
     private t: Tuning,
     private bounds: { W: number; seaY: number },
   ) {
-    this.gfx = scene.add.graphics().setDepth(15);
-    this.drawShape();
+    this.bodyImg = scene.add.image(0, 0, `heli_${getItem('ss.paint')}`).setOrigin(HELI_ORIGIN.x, HELI_ORIGIN.y);
+    this.arcs = scene.add.image(HELI_ROTOR_POS.x, HELI_ROTOR_POS.y - 8, 'heli_arcs');
+    this.rotor = scene.add.image(HELI_ROTOR_POS.x, HELI_ROTOR_POS.y, 'heli_rotor');
+    this.tail = scene.add.image(HELI_TAIL_POS.x, HELI_TAIL_POS.y, 'heli_tail');
+    this.root = scene.add.container(0, 0, [this.bodyImg, this.arcs, this.rotor, this.tail]).setDepth(15);
     this.reset();
   }
 
@@ -121,20 +130,18 @@ export class Helicopter {
     return new Phaser.Geom.Rectangle(this.x - hitboxW / 2, this.y - hitboxH / 2, hitboxW, hitboxH);
   }
 
-  render(): void {
-    this.gfx.setPosition(this.x, this.y).setRotation(this.tilt).setScale(-this.facing, 1);
+  /** Boya değişimi: doku anında yenilenir. */
+  setPaint(id: string): void {
+    this.bodyImg.setTexture(`heli_${id}`);
   }
 
-  // Geçici çizim (F5'te gerçek doku): burun solda, yerel koordinat merkezde.
-  private drawShape(): void {
-    const { hitboxW: w, hitboxH: hh } = this.t.heli;
-    const g = this.gfx;
-    g.fillStyle(hex(PALETTE.heliRed), 1);
-    g.fillRoundedRect(-w * 0.32, -hh / 2, w * 0.64, hh, hh * 0.35);
-    g.fillRect(w * 0.25, -hh * 0.1, w * 0.4, hh * 0.18);
-    g.fillStyle(hex(PALETTE.heliGlass), 1);
-    g.fillRoundedRect(-w * 0.3, -hh * 0.35, w * 0.22, hh * 0.4, 6);
-    g.fillStyle(hex(PALETTE.ink), 1);
-    g.fillRect(-w * 0.5, -hh / 2 - 5, w, 3);
+  /** Rotor: scaleX = cos(t·42) ile dönüyormuş gibi; kuyruk rotoru rotation += 30·dt. */
+  render(dtSec: number): void {
+    this.rotorT += dtSec;
+    this.rotor.setScale(Math.cos(this.rotorT * 42), 1);
+    this.tail.rotation += 30 * dtSec;
+    this.arcs.setAlpha(0.5 + 0.2 * Math.sin(this.rotorT * 30));
+    const k = this.t.heli.spriteScale;
+    this.root.setPosition(this.x, this.y).setRotation(this.tilt).setScale(-this.facing * k, k);
   }
 }

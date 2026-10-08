@@ -40,3 +40,21 @@ export const PALETTE = {
 export function hex(color: string): number {
   return parseInt(color.slice(1), 16);
 }
+
+/** Helikopter boyaları (§15.1). Kilit şartları src/core/unlocks.ts'de. */
+export const PAINTS = [
+  { id: 'rescue', color: '#D8573E' },
+  { id: 'sunny', color: '#F3C44E' },
+  { id: 'mint', color: '#5FB7A5' },
+  { id: 'navy', color: '#2F4858' },
+  { id: 'paper', color: '#F2ECDF' },
+  { id: 'gold', color: '#D9A82E' },
+] as const;
+export type PaintId = (typeof PAINTS)[number]['id'];
+
+export const MEDAL_COLORS = {
+  bronze: '#C47F45',
+  silver: '#A9B4B8',
+  gold: '#E8AE3C',
+  platinum: '#CFE6E4',
+} as const;

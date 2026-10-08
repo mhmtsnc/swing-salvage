@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { PALETTE, hex } from '../config/palette';
 import type { Tuning } from '../config/tuning';
 import { STEP_MS } from '../core/time';
+import { PAD } from '../art/textures';
 
 const ROPE_WIDTH = 2.6;
 const SAG = 6;
@@ -11,7 +12,9 @@ export class Rope {
   hook: MatterJS.BodyType | null = null;
   private constraint: MatterJS.ConstraintType;
   private gfx: Phaser.GameObjects.Graphics;
-  private hookGfx: Phaser.GameObjects.Graphics;
+  private hookImg: Phaser.GameObjects.Image;
+  private slings: Phaser.GameObjects.Graphics;
+  private slingHalf = 0;
   private reelFrom = 0;
   private reelT = 1;
   /** Taşınan gövde (yoksa kanca) ucundaki dünya noktası için yerel ofset */
@@ -23,7 +26,8 @@ export class Rope {
     winch: { x: number; y: number },
   ) {
     this.gfx = scene.add.graphics().setDepth(13);
-    this.hookGfx = scene.add.graphics().setDepth(14);
+    this.slings = scene.add.graphics().setDepth(14);
+    this.hookImg = scene.add.image(0, 0, 'hook').setDepth(14.5).setOrigin(0.5, (PAD + 33) / (34 + 2 * PAD));
     this.hook = this.makeHook(winch.x, winch.y + t.rope.length);
     this.constraint = scene.matter.add.worldConstraint(this.hook, t.rope.length, t.rope.stiffness, {
       pointA: { x: winch.x, y: winch.y },
@@ -67,7 +71,8 @@ export class Rope {
   }
 
   /** Kancayı kaldırır, halatı kargoya bağlar. Uzunluk reelTime sürede rope.length'e geçer. */
-  attach(body: MatterJS.BodyType, pointB: { x: number; y: number }): void {
+  attach(body: MatterJS.BodyType, pointB: { x: number; y: number }, halfWidth = 0): void {
+    this.slingHalf = halfWidth;
     if (this.hook) {
       this.scene.matter.world.remove(this.hook);
       this.hook = null;
@@ -82,6 +87,7 @@ export class Rope {
   detachToHook(): void {
     const e = this.endPoint();
     this.attachedBody = null;
+    this.slingHalf = 0;
     this.hook = this.makeHook(e.x, e.y);
     this.constraint.bodyB = this.hook;
     this.constraint.pointB = { x: 0, y: 0 };
@@ -92,6 +98,7 @@ export class Rope {
   resetHook(winch: { x: number; y: number }): void {
     if (this.hook) this.scene.matter.world.remove(this.hook);
     this.attachedBody = null;
+    this.slingHalf = 0;
     this.hook = this.makeHook(winch.x, winch.y + this.t.rope.length);
     this.constraint.bodyB = this.hook;
     this.constraint.pointB = { x: 0, y: 0 };
@@ -130,14 +137,35 @@ export class Rope {
     }
     g.strokePath();
 
-    const h = this.hookGfx;
-    h.clear();
-    h.fillStyle(hex(PALETTE.ink), 1);
-    h.fillCircle(e.x, e.y, this.t.hook.radius);
+    // Kanca dokusu halat yönünde; kargo taşırken askı çizgileri üst köşelere iner.
+    const dx = e.x - a.x;
+    const dy = e.y - a.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const lift = this.attachedBody ? 14 : 0;
+    const hx = e.x - (dx / len) * lift;
+    const hy = e.y - (dy / len) * lift;
+    this.hookImg.setPosition(hx, hy).setRotation(Math.atan2(-dx, dy));
+    const sl = this.slings;
+    sl.clear();
+    const b = this.attachedBody;
+    if (b && this.slingHalf > 0) {
+      const c = Math.cos(b.angle);
+      const s2 = Math.sin(b.angle);
+      const top = this.constraint.pointB.y;
+      sl.lineStyle(1.8, hex(PALETTE.rope), 1);
+      for (const sx of [-1, 1]) {
+        const lx = sx * (this.slingHalf - 4);
+        sl.beginPath();
+        sl.moveTo(hx, hy);
+        sl.lineTo(b.position.x + lx * c - top * s2, b.position.y + lx * s2 + top * c);
+        sl.strokePath();
+      }
+    }
   }
 
   destroy(): void {
     this.gfx.destroy();
-    this.hookGfx.destroy();
+    this.hookImg.destroy();
+    this.slings.destroy();
   }
 }

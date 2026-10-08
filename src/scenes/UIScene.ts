@@ -1,126 +1,196 @@
 import Phaser from 'phaser';
 import { getTuning, type Tuning } from '../config/tuning';
-import { PALETTE, hex } from '../config/palette';
+import type { PaintId } from '../config/palette';
+import { PRIVACY_URL } from '../config/app';
 import { STRINGS, fmt } from '../config/strings';
+import { getItem, setItem } from '../core/storage';
+import { evaluateUnlocks } from '../core/unlocks';
 import type { GameScene } from './GameScene';
+import type { Button } from '../ui/components';
+import { GameOverPanel, type GameOverData } from '../ui/GameOverPanel';
+import { HangarScreen } from '../ui/HangarScreen';
+import { Hud } from '../ui/Hud';
+import { Onboarding } from '../ui/Onboarding';
+import { PausePanel } from '../ui/PausePanel';
+import { ReadyScreen } from '../ui/ReadyScreen';
+import { SettingsScreen } from '../ui/SettingsScreen';
 
-const FONT = 'Fredoka';
-const PANEL_W = 360;
-const PANEL_H = 330;
-const PANEL_SLIDE_MS = 250;
+type Overlay = 'none' | 'hangar' | 'settings';
 
-const FAIL_TEXT = {
-  splash: [STRINGS.splashTitle, STRINGS.splashSub],
-  crash: [STRINGS.crashTitle, STRINGS.crashSub],
-  topple: [STRINGS.toppleTitle, STRINGS.toppleSub],
-} as const;
-
-/** Geçici arayüz (son tasarım F5'te). Oyun durumunu GameScene.run'dan okur. */
+/** Bütün arayüz burada (kamera sarsıntısı HUD'u etkilemesin). Oyun durumunu GameScene.run'dan okur. */
 export class UIScene extends Phaser.Scene {
   private T!: Tuning;
-  private game_!: GameScene;
-  private scoreText!: Phaser.GameObjects.Text;
-  private shipText!: Phaser.GameObjects.Text;
-  private hint!: Phaser.GameObjects.Text;
-  private banner!: Phaser.GameObjects.Text;
-  private panel!: Phaser.GameObjects.Container;
-  private title!: Phaser.GameObjects.Text;
-  private sub!: Phaser.GameObjects.Text;
-  private result!: Phaser.GameObjects.Text;
-  private bestText!: Phaser.GameObjects.Text;
-  private againBtn!: Phaser.GameObjects.Rectangle;
-  private panelOpen = false;
-  private unlockAt = 0;
+  private gs!: GameScene;
+  private ready!: ReadyScreen;
+  private hud!: Hud;
+  private over!: GameOverPanel;
+  private pausePanel!: PausePanel;
+  private hangar!: HangarScreen;
+  private settings!: SettingsScreen;
+  private onboarding!: Onboarding;
+  private overlay: Overlay = 'none';
+  private lastState = '';
 
   constructor() {
     super('UIScene');
   }
 
-  private txt(size: number, color: string, weight = '700'): Phaser.GameObjects.Text {
-    return this.add
-      .text(0, 0, '', { fontFamily: FONT, fontStyle: weight, fontSize: `${size}px`, color })
-      .setOrigin(0.5);
-  }
-
   create(): void {
     this.T = getTuning();
-    this.game_ = this.scene.get('GameScene') as GameScene;
-    this.scoreText = this.txt(72, PALETTE.uiText);
-    this.shipText = this.txt(22, PALETTE.uiTextSoft, '600');
-    this.hint = this.txt(30, PALETTE.uiText, '600').setText(STRINGS.dragToStart);
-    this.banner = this.txt(44, PALETTE.uiRed).setAlpha(0);
+    this.gs = this.scene.get('GameScene') as GameScene;
+    const ev = this.game.events;
 
-    const bg = this.add.rectangle(0, 0, PANEL_W, PANEL_H, hex(PALETTE.uiPaper)).setStrokeStyle(4, hex(PALETTE.uiTeal));
-    this.title = this.txt(52, PALETTE.uiRed).setPosition(0, -PANEL_H / 2 + 52);
-    this.sub = this.txt(22, PALETTE.uiTextSoft, '500').setPosition(0, -PANEL_H / 2 + 92);
-    this.result = this.txt(64, PALETTE.uiText).setPosition(0, -20);
-    this.bestText = this.txt(24, PALETTE.uiTextSoft, '600').setPosition(0, 28);
-    this.againBtn = this.add.rectangle(0, PANEL_H / 2 - 62, 240, 70, hex(PALETTE.uiRed)).setStrokeStyle(4, hex(PALETTE.uiRedBase));
-    const againLabel = this.txt(36, PALETTE.uiPaper).setPosition(0, PANEL_H / 2 - 62).setText(STRINGS.again);
-    this.panel = this.add
-      .container(0, 0, [bg, this.title, this.sub, this.result, this.bestText, this.againBtn, againLabel])
-      .setVisible(false);
-
-    this.againBtn.setInteractive({ useHandCursor: true });
-    this.againBtn.on('pointerdown', () => {
-      if (this.time.now >= this.unlockAt) this.game.events.emit('ss:again');
+    this.ready = new ReadyScreen(this, {
+      onDaily: () => ev.emit('ss:daily'),
+      onHangar: () => this.openOverlay('hangar'),
+      onSettings: () => this.openOverlay('settings'),
     });
-
-    this.game.events.on('ss:banner', this.showBanner, this);
-    this.game.events.on('ss:gameover', this.openPanel, this);
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      this.game.events.off('ss:banner', this.showBanner, this);
-      this.game.events.off('ss:gameover', this.openPanel, this);
+    this.hud = new Hud(this, () => ev.emit('ss:pause'));
+    this.over = new GameOverPanel(this, {
+      onAgain: () => this.againTapped(),
+      onSecondChance: () => ev.emit('ss:secondChance'),
+      onShare: () => ev.emit('ss:share'),
+      onHome: () => this.homeTapped(),
     });
+    this.pausePanel = new PausePanel(this, { onResume: () => ev.emit('ss:resume'), onHome: () => ev.emit('ss:home') });
+    this.hangar = new HangarScreen(this, {
+      onSelect: (id) => this.selectPaint(id),
+      onBack: () => this.openOverlay('none'),
+    });
+    this.settings = new SettingsScreen(this, {
+      onBack: () => this.openOverlay('none'),
+      onHowTo: () => this.onboarding.reset(),
+      onPrivacyOptions: () => ev.emit('ss:privacyOptions'),
+      onPolicy: () => window.open(PRIVACY_URL, '_blank', 'noopener'),
+      onTune: () => ev.emit('ss:tune'),
+    });
+    this.onboarding = new Onboarding(this);
+
+    // Sıra: arka → ön
+    for (const root of [this.ready.root, this.hud.root, this.pausePanel.root, this.over.root, this.hangar.root, this.settings.root]) {
+      this.children.bringToTop(root);
+    }
+
+    const on = (e: string, fn: (...a: never[]) => void) => {
+      ev.on(e, fn, this);
+      this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => ev.off(e, fn, this));
+    };
+    on('ss:placed', ((p: { x: number; y: number; gained: number; perfect: boolean; steady: boolean }) => {
+      this.onboarding.onPlaced();
+      const small = p.steady ? STRINGS.steady : p.perfect ? STRINGS.perfect : null;
+      this.hud.floatTag(p.x, p.y - 50, `+${p.gained}`, small);
+    }) as never);
+    on('ss:shipFull', ((p: { bonus: number }) => {
+      this.hud.floatTag(this.scale.width / 2, this.scale.height * 0.32, `+${p.bonus}`, STRINGS.shipFull);
+    }) as never);
+    on('ss:hooked', (() => this.onboarding.onHooked()) as never);
+    on('ss:dragMove', (() => this.onboarding.onDragMove()) as never);
+    on('ss:gameover', (() => this.openPanel()) as never);
   }
 
-  private showBanner(b: { text: string; kind: string }): void {
-    this.tweens.killTweensOf(this.banner);
-    this.banner
-      .setText(b.text)
-      .setColor(b.kind === 'ship' ? PALETTE.uiTeal : PALETTE.uiRed)
-      .setPosition(this.scale.width / 2, this.scale.height * 0.3)
-      .setAlpha(1)
-      .setScale(0.6);
-    this.tweens.add({ targets: this.banner, scale: 1, duration: 160, ease: 'Back.easeOut' });
-    this.tweens.add({
-      targets: this.banner,
-      alpha: 0,
-      y: this.banner.y - 30,
-      delay: this.T.ship.swapBannerTime * 1000,
-      duration: 300,
-    });
+  // ───────── geçişler ─────────
+
+  private openOverlay(o: Overlay): void {
+    this.overlay = o;
+    if (o === 'hangar') this.hangar.refresh(this.unlocked(), getItem('ss.paint') as PaintId);
+    this.game.events.emit('ss:overlay', o);
+  }
+
+  private unlocked(): PaintId[] {
+    return evaluateUnlocks(getItem('ss.stats'), getItem('ss.daily'));
+  }
+
+  private selectPaint(id: PaintId): void {
+    if (!this.unlocked().includes(id)) return;
+    setItem('ss.paint', id);
+    this.game.events.emit('ss:paint', id);
+    this.hangar.refresh(this.unlocked(), id);
+  }
+
+  private againTapped(): void {
+    if (!this.over.isOpen || !this.over.unlocked) return;
+    this.over.hide();
+    this.game.events.emit('ss:again');
+  }
+
+  private homeTapped(): void {
+    if (!this.over.isOpen || !this.over.unlocked) return;
+    this.over.hide();
+    this.game.events.emit('ss:home');
+  }
+
+  private medalFor(score: number): GameOverData['medal'] {
+    const m = this.T.medals;
+    if (score >= m.platinum) return 'platinum';
+    if (score >= m.gold) return 'gold';
+    if (score >= m.silver) return 'silver';
+    if (score >= m.bronze) return 'bronze';
+    return null;
   }
 
   private openPanel(): void {
-    const run = this.game_.run;
-    const [title, sub] = FAIL_TEXT[run.failKind ?? 'splash'];
-    this.title.setText(title);
-    this.sub.setText(sub);
-    this.result.setText(String(run.score));
-    this.bestText.setText(this.game_.newBest ? STRINGS.newBest : `${STRINGS.best} ${this.game_.best}`);
-    this.unlockAt = this.time.now + this.T.fx.gameOverInputLock * 1000;
-    this.panelOpen = true;
-    const cy = this.scale.height * 0.47;
-    this.panel.setVisible(true).setPosition(this.scale.width / 2, this.scale.height + PANEL_H);
-    this.tweens.add({ targets: this.panel, y: cy, duration: PANEL_SLIDE_MS, ease: 'Cubic.easeOut' });
+    const run = this.gs.run;
+    const data: GameOverData = {
+      kind: run.failKind ?? 'splash',
+      score: run.score,
+      best: this.gs.best,
+      newBest: this.gs.newBest,
+      medal: this.medalFor(run.score),
+      message: fmt(STRINGS.delivered, { n: run.delivered }),
+      canSecondChance: false,
+      daily: null,
+      playNormal: false,
+    };
+    this.over.show(data, this.scale.width, this.scale.height, this.T.fx.gameOverInputLock);
   }
 
-  update(): void {
-    const { width: W } = this.scale;
-    const run = this.game_?.run;
-    if (!run) return;
-    this.scoreText.setText(String(run.score)).setPosition(W / 2, 76);
-    this.shipText
-      .setText(fmt(STRINGS.shipProgress, { n: run.shipIndex + 1, k: Math.min(run.stacked, run.quota), q: run.quota }))
-      .setPosition(W / 2, 136);
-    this.hint.setVisible(run.state === 'READY').setPosition(W / 2, this.scale.height * 0.4);
+  // ───────── çerçeve döngüsü ─────────
 
-    if (this.panelOpen && run.state !== 'GAME_OVER') {
-      this.panelOpen = false;
-      this.tweens.killTweensOf(this.panel);
-      this.panel.setVisible(false);
+  update(): void {
+    const run = this.gs?.run;
+    if (!run) return;
+    const { width: W, height: H } = this.scale;
+    const state = run.state;
+    const ov = this.overlay;
+
+    if (ov === 'none' && this.lastState !== state) {
+      // durum değişince panelleri senkronla
+      if (state !== 'GAME_OVER' && this.over.isOpen) this.over.hide();
     }
-    if (this.panelOpen) this.panel.x = W / 2;
+    this.lastState = state;
+
+    const showReady = ov === 'none' && state === 'READY';
+    const showHud = ov === 'none' && (state === 'PLAYING' || state === 'SWAPPING' || state === 'PAUSED' || state === 'FAILING' || state === 'GAME_OVER');
+    this.ready.show(showReady);
+    this.hud.show(showHud);
+    this.pausePanel.show(ov === 'none' && state === 'PAUSED');
+    this.hangar.show(ov === 'hangar');
+    this.settings.show(ov === 'settings');
+    if (state !== 'GAME_OVER' && this.over.isOpen) this.over.hide();
+
+    this.ready.update(W, H, this.gs.best);
+    this.hud.update(W, run, this.gs.best, null);
+    this.pausePanel.layout(W, H);
+    this.hangar.layout(W, H);
+    this.settings.layout(W, H);
+    this.over.layout(W, H);
+
+    const playing = ov === 'none' && (state === 'PLAYING');
+    this.onboarding.update(
+      playing,
+      this.gs.heliPos,
+      this.gs.floatingCargoTop(),
+      this.gs.slotPositions(),
+      this.gs.isCarrying(),
+    );
+
+    // GameScene'e dokunma alanlarını ve modal bayrağını yayınla
+    const buttons: Button[] = [
+      ...this.ready.buttons, this.hud.pauseBtn, ...this.pausePanel.buttons, ...this.over.buttons,
+      ...this.hangar.buttons, ...this.settings.buttons,
+    ];
+    const rects = buttons.map((b) => b.rect()).filter((r): r is NonNullable<typeof r> => r !== null);
+    this.registry.set('ss:uiRects', rects);
+    this.registry.set('ss:modal', ov !== 'none' || state === 'PAUSED' || state === 'GAME_OVER' || state === 'FAILING');
   }
 }

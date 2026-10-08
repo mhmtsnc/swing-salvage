@@ -30,6 +30,17 @@ export function waterYMid(x: number, t: number, seaY: number, amp: number): numb
 }
 
 const STEP_X = 12;
+const SHADOW_DY = -3;
+const SHADOW_ALPHA = 0.18;
+const FOAM_WIDTH = 4;
+
+interface Foam { alpha: number }
+const FOAM: Map<Layer, Foam | null> = new Map([
+  [BACK, null],
+  [MID, { alpha: 1 }],
+  [FRONT, { alpha: 1 }],
+  [DEEP, { alpha: 0.6 }],
+]);
 
 export class Sea {
   private layers: { def: Layer; g: Phaser.GameObjects.Graphics }[];
@@ -41,19 +52,35 @@ export class Sea {
     }));
   }
 
+  /** Katmanlı kâğıt dalga (§13 Kural 3): arka katmana gölge, katman rengi, üst kenarda köpük çizgisi. */
   draw(t: number, seaY: number, amp: number, W: number, H: number): void {
     for (const { def, g } of this.layers) {
-      g.clear();
-      g.fillStyle(hex(def.color), 1);
-      g.beginPath();
-      g.moveTo(0, H + 20);
+      const pts: number[] = [];
       for (let x = 0; x <= W + STEP_X; x += STEP_X) {
-        g.lineTo(x, surface(x, t + def.phase, seaY + def.offsetY, amp * def.ampMul));
+        pts.push(x, surface(x, t + def.phase, seaY + def.offsetY, amp * def.ampMul));
       }
-      g.lineTo(W + STEP_X, H + 20);
-      g.closePath();
-      g.fillPath();
+      g.clear();
+      this.fillBody(g, pts, W, H, SHADOW_DY, hex(PALETTE.shadow), SHADOW_ALPHA);
+      this.fillBody(g, pts, W, H, 0, hex(def.color), 1);
+      const foam = FOAM.get(def);
+      if (foam) {
+        g.lineStyle(FOAM_WIDTH, hex(PALETTE.foam), foam.alpha);
+        g.beginPath();
+        g.moveTo(pts[0], pts[1]);
+        for (let i = 2; i < pts.length; i += 2) g.lineTo(pts[i], pts[i + 1]);
+        g.strokePath();
+      }
     }
+  }
+
+  private fillBody(g: Phaser.GameObjects.Graphics, pts: number[], W: number, H: number, dy: number, color: number, alpha: number): void {
+    g.fillStyle(color, alpha);
+    g.beginPath();
+    g.moveTo(0, H + 20);
+    for (let i = 0; i < pts.length; i += 2) g.lineTo(pts[i], pts[i + 1] + dy);
+    g.lineTo(W + STEP_X, H + 20);
+    g.closePath();
+    g.fillPath();
   }
 
   destroy(): void {

@@ -40,7 +40,7 @@ export const DEFAULTS: StorageSchema = {
     bestShip: 0,
     medals: { bronze: 0, silver: 0, gold: 0, platinum: 0 },
   },
-  'ss.paint': 'red',
+  'ss.paint': 'rescue',
   'ss.unlocks': [],
   'ss.settings': { sound: true, haptics: true },
   'ss.onboard': { drag: false, hook: false, drop: false },
