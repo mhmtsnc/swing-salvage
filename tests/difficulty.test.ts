@@ -25,3 +25,20 @@ describe('difficultyAt', () => {
     expect(difficultyAt(20).gustForce).toBeCloseTo(1.2);
   });
 });
+
+describe('difficultyAt ara değerler', () => {
+  it('7.5 puanda 5 ile 10 arasının ortası', () => {
+    const d = difficultyAt(7.5);
+    expect(d.windBase).toBeCloseTo(0.14);
+    expect(d.gustInterval).toBeCloseTo(8.25);
+    expect(d.rain).toBeCloseTo(0.5);
+  });
+  it('yalpa periyodu skorla azalır, monoton', () => {
+    let prev = Infinity;
+    for (let s = 0; s <= 70; s += 5) {
+      const p = difficultyAt(s).rollPeriod;
+      expect(p).toBeLessThanOrEqual(prev);
+      prev = p;
+    }
+  });
+});

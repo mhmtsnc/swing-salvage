@@ -22,3 +22,9 @@ F3 · Spawn yeniden çekme · Önceki x'e minSeparation'dan yakınsa bir kez yen
 F3 · Yeniden başlama · AGAIN doğrudan PLAYING'e geçer (READY atlanır), `?score=N` korunur · "anında yeni koşu"
 F3 · Yeniden boyutlama · seaY değişirse gemi sadece READY/GAME_OVER durumunda yeniden kurulur · oynarken gemi geometrisi sabit kalsın
 F3 · FAILING · Mantık hızı failSlowMo ile yavaşlar (adım biriktirici), kamera %35 kayıp 1.06 zoom, suçlu yanıp sönme F5'e · geçici görsel
+F4 · Tohum · Koşu tohumu `Date.now()` (veya `?seed=N`); `${seed}:spawn` ve `${seed}:weather` ayrı akışlar · P3(c): hareket kargo sırasını değiştirmez
+F4 · Ani rüzgâr aralığı · Aralık bir önceki ani rüzgârın bitişinden sonraki uyarıya kadar sayılır; ilk sayaç skor ≥ gustFromScore olunca başlar · GDD başlangıç/bitiş referansı vermiyor
+F4 · Ani rüzgâr yönü · +1 = sağa eser (soldan gelir, şeritler sol kenardan akar) · yön sözleşmesi
+F4 · Donma · SWAPPING'de sadece aralık sayacı durur, devam eden ani rüzgâr biter, şimşek sürer · "zamanlayıcı durur"
+F4 · Hava adımı · Weather READY'de çalışmaz; PLAYING/SWAPPING/FAILING'de çalışır (FAILING yavaş çekimde) · başlamadan ani rüzgâr gelmesin
+F4 · Yağmur dokusu · rain_a/rain_b kodla üretilen 256 px döşeme; kayma (−90,520) ve (−60,380), alfa rain×1,0 ve ×0,6 · §10.4

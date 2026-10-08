@@ -3,7 +3,7 @@ import { getTuning, type Tuning } from '../config/tuning';
 import { PALETTE } from '../config/palette';
 import { STRINGS, fmt } from '../config/strings';
 import { createRng } from '../core/rng';
-import { FixedStepper, STEP_MS } from '../core/time';
+import { FixedStepper, STEP_MS, toStepAcc } from '../core/time';
 import { getItem, setItem } from '../core/storage';
 import { difficultyAt } from '../game/Difficulty';
 import { Helicopter } from '../game/Helicopter';
@@ -13,6 +13,8 @@ import { Sea, waterY, waterYMid } from '../game/Sea';
 import { Ship } from '../game/Ship';
 import { Run, type FailKind } from '../game/Run';
 import { Spawner } from '../game/Spawner';
+import { Weather } from '../game/Weather';
+import { WeatherFx } from '../game/WeatherFx';
 import { classifyPlacement, findBelow } from '../game/placement';
 import { mastRect, rectWorldAabb, shipParts, slotCentersWorld, worldToShip } from '../game/shipModel';
 
@@ -42,6 +44,11 @@ export class GameScene extends Phaser.Scene {
   private heli!: Helicopter;
   private rope!: Rope;
   private spawner!: Spawner;
+  private weather!: Weather;
+  private weatherFx!: WeatherFx;
+  private rainLevel = 0;
+  private fixedSeed: number | null = null;
+  seed = 0;
   private cargos: Cargo[] = [];
   private active: Cargo | null = null;
   private spawnAt = 0;
@@ -66,7 +73,11 @@ export class GameScene extends Phaser.Scene {
     this.ship = new Ship(this, this.T, this.seaY, difficultyAt(this.startScore).rollAmpDeg);
     this.heli = new Helicopter(this, this.T, { W: this.W, seaY: this.seaY });
     this.rope = new Rope(this, this.T, this.heli.winchPoint());
-    this.spawner = new Spawner(createRng(Date.now() >>> 0), this.T);
+    const seedParam = Number(q.get('seed'));
+    this.fixedSeed = Number.isFinite(seedParam) && q.get('seed') ? seedParam : null;
+    this.weatherFx = new WeatherFx(this);
+    this.makeRngs();
+    this.rainLevel = difficultyAt(this.startScore).rain;
     this.best = getItem('ss.best');
     this.run.reset('READY', this.startScore);
     this.spawnAt = 0;
@@ -120,6 +131,22 @@ export class GameScene extends Phaser.Scene {
     return this.matter.query as unknown as Collider;
   }
 
+  /** Her koşu için ayrı akışlar: kargo sırası (spawnRng) ve hava (weatherRng). */
+  private makeRngs(): void {
+    this.seed = this.fixedSeed ?? (Date.now() >>> 0);
+    this.spawner = new Spawner(createRng(`${this.seed}:spawn`), this.T);
+    this.weather = new Weather(createRng(`${this.seed}:weather`), this.T, {
+      onGustWarn: (dir) => this.game.events.emit('ss:gustWarn', dir),
+      onGustStart: (dir) => this.game.events.emit('ss:gustStart', dir),
+      onGustEnd: () => this.game.events.emit('ss:gustEnd'),
+      onLightning: (x) => {
+        this.weatherFx.lightning(x, this.W, this.seaY);
+        this.game.events.emit('ss:lightning');
+      },
+      onThunder: () => this.game.events.emit('ss:thunder'),
+    });
+  }
+
   private emit(text: string, kind: 'perfect' | 'steady' | 'ship'): void {
     this.game.events.emit('ss:banner', { text, kind });
   }
@@ -166,7 +193,8 @@ export class GameScene extends Phaser.Scene {
     this.heli.setBounds(this.W, this.seaY);
     this.heli.reset();
     this.rope.resetHook(this.heli.winchPoint());
-    this.spawner = new Spawner(createRng(Date.now() >>> 0), this.T);
+    this.makeRngs();
+    this.rainLevel = d.rain;
     this.failLeft = 0;
     this.newBest = false;
     this.stepper.reset();
@@ -202,9 +230,21 @@ export class GameScene extends Phaser.Scene {
     this.waveAmp += Phaser.Math.Clamp(d.waveAmp - this.waveAmp, -WAVE_RATE / 60, WAVE_RATE / 60);
     this.ship.step(d.rollAmpDeg, d.rollPeriod);
 
+    const live = run.state === 'PLAYING' || run.state === 'SWAPPING' || run.state === 'FAILING';
+    if (live) this.weather.step(STEP_MS / 1000, d, run.score, run.state === 'SWAPPING');
+    const base = live ? this.weather.baseAccel(d) : 0;
+    const gust = live ? this.weather.gustAccel() : 0;
+
     const carried = this.active?.state === 'CARRIED' ? this.active : null;
-    this.heli.step(carried ? carried.handling : 1, 0);
+    this.heli.step(carried ? carried.handling : 1, base + gust);
     this.rope.step(this.heli.winchPoint());
+    if (base + gust !== 0) this.pushBody(this.rope.endBody, base + gust);
+    if (gust !== 0) {
+      const f = gust * this.T.weather.stackGustFactor;
+      for (const c of this.cargos) {
+        if ((c.state === 'SETTLING' || c.state === 'STACKED') && c.body) this.pushBody(c.body, f);
+      }
+    }
     if (carried?.body) carried.preSpeed = this.relMotion(carried.body).speed;
 
     this.matter.step(STEP_MS);
@@ -218,6 +258,11 @@ export class GameScene extends Phaser.Scene {
     this.handleSettling();
     this.checkFailures();
     this.checkSwap();
+  }
+
+  /** Yatay ivme (px/s²) → bu adımın hız farkı. */
+  private pushBody(b: MatterJS.BodyType, accPxS2: number): void {
+    this.matter.body.setVelocity(b, { x: b.velocity.x + toStepAcc(accPxS2), y: b.velocity.y });
   }
 
   private trySpawn(): void {
@@ -410,6 +455,7 @@ export class GameScene extends Phaser.Scene {
           onComplete: () => {
             this.run.endSwap();
             this.spawner.resetShip();
+            this.weather.newShip();
             this.spawnAt = this.simTime;
           },
         });
@@ -443,12 +489,16 @@ export class GameScene extends Phaser.Scene {
     }
     this.heli.render();
     this.rope.draw();
+    const dRain = difficultyAt(run.score).rain;
+    this.rainLevel += Phaser.Math.Clamp(dRain - this.rainLevel, -delta / 1000, delta / 1000);
+    this.weatherFx.setRain(this.rainLevel);
+    this.weatherFx.update(this.weather, this.W, this.H, delta / 1000);
 
     if (this.debugText) {
       this.debugText.setText(
         `FPS ${this.game.loop.actualFps.toFixed(0)}  steps ${steps}  ${run.state}\n` +
           `score ${run.score}  ship ${run.shipIndex + 1}  ${run.stacked}/${run.quota}  streak ${run.streak}\n` +
-          `cargo ${this.cargos.map((c) => c.state[0]).join('')}`,
+          `cargo ${this.cargos.map((c) => c.state[0]).join('')}  gust ${this.weather.phase}  seed ${this.seed}`,
       );
     }
   }
