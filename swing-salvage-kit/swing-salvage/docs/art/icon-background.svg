@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Adaptive icon background: full-bleed stormy paper sky and layered sea. -->
+  <defs>
+    <filter id="up" x="-10%" y="-20%" width="120%" height="140%">
+      <feDropShadow dx="0" dy="-8" stdDeviation="8" flood-color="#1D2C2E" flood-opacity="0.22"/>
+    </filter>
+    <filter id="cl" x="-10%" y="-10%" width="120%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="10" flood-color="#1D2C2E" flood-opacity="0.2"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" fill="#BCCBC7"/>
+  <path fill="#A3B5B1" filter="url(#cl)" d="M-40 300 C40 230 150 240 200 280 C260 200 400 210 450 270 C520 220 640 225 690 285 C760 240 900 250 1064 300 L1064 0 L-40 0 Z"/>
+  <path fill="#E9ECE4" filter="url(#cl)" d="M-40 190 C30 120 140 115 190 160 C240 70 390 65 440 150 C500 95 620 100 660 170 C720 120 880 125 1064 200 L1064 0 L-40 0 Z"/>
+  <path fill="#86AFA9" filter="url(#up)" d="M-20 770 Q40 745 100 770 T220 770 T340 770 T460 770 T580 770 T700 770 T820 770 T940 770 T1060 770 L1060 1024 L-20 1024 Z"/>
+  <path fill="#659592" filter="url(#up)" d="M-40 850 Q30 820 100 850 T240 850 T380 850 T520 850 T660 850 T800 850 T940 850 T1080 850 L1080 1024 L-40 1024 Z"/>
+  <path d="M-40 850 Q30 820 100 850 T240 850 T380 850 T520 850 T660 850 T800 850 T940 850 T1080 850" fill="none" stroke="#F4F1E8" stroke-width="9" stroke-linecap="round"/>
+  <path fill="#477779" filter="url(#up)" d="M-60 930 Q20 900 100 930 T260 930 T420 930 T580 930 T740 930 T900 930 T1060 930 L1060 1024 L-60 1024 Z"/>
+  <path d="M-60 930 Q20 900 100 930 T260 930 T420 930 T580 930 T740 930 T900 930 T1060 930" fill="none" stroke="#F4F1E8" stroke-width="9" stroke-linecap="round"/>
+</svg>

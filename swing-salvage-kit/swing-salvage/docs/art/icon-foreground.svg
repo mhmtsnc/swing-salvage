@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Adaptive icon foreground: transparent background. Paper-cut helicopter carrying a swinging crate. -->
+  <defs>
+    <filter id="sh" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="9" flood-color="#1D2C2E" flood-opacity="0.32"/>
+    </filter>
+  </defs>
+
+  <!-- rope -->
+  <path d="M439.5 447.5 Q470 500 514 541.7" fill="none" stroke="#5A4636" stroke-width="7" stroke-linecap="round"/>
+
+  <!-- crate (local 72x56, scale 2.2) -->
+  <g transform="translate(495 650) rotate(10) scale(2.2)" filter="url(#sh)">
+    <path d="M0 -44 L-30 -28 M0 -44 L30 -28" fill="none" stroke="#5A4636" stroke-width="2" stroke-linecap="round"/>
+    <rect x="-6" y="-50" width="12" height="9" rx="2.5" fill="#34474B"/>
+    <rect x="-36" y="-28" width="72" height="56" rx="4" fill="#E8AE3C"/>
+    <rect x="29" y="-28" width="7" height="56" fill="#000" opacity=".12"/>
+    <path d="M-32 -9 L28 -9 M-32 9 L28 9 M-30 24 L26 -24" fill="none" stroke="#B98221" stroke-width="3" stroke-linecap="round"/>
+  </g>
+
+  <!-- helicopter (local coords from mockup, scale 2.2) -->
+  <g transform="translate(430 380) rotate(-8) scale(2.2)" filter="url(#sh)">
+    <path d="M-82 -58 Q0 -68 84 -58" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" opacity=".8"/>
+    <rect x="-94" y="-49" width="192" height="6" rx="3" fill="#34474B"/>
+    <rect x="-4" y="-44" width="8" height="12" fill="#34474B"/>
+    <rect x="-11" y="-51" width="22" height="7" rx="3" fill="#34474B"/>
+    <circle cx="126" cy="-16" r="14" fill="#FFFFFF" opacity=".45"/>
+    <rect x="123.5" y="-31" width="5" height="30" rx="2.5" fill="#34474B"/>
+    <path fill="#D8573E" d="M110 -6 L122 -32 L132 -32 L126 -2 Z"/>
+    <path fill="#D8573E" d="M-58 4 C-58 -16 -44 -30 -20 -32 L30 -32 C44 -32 52 -24 54 -12 L58 -2 L120 -8 L124 -2 L58 14 C50 22 40 26 28 26 L-36 26 C-50 26 -58 18 -58 4 Z"/>
+    <path fill="#000" opacity=".16" d="M-56 12 C-52 22 -45 26 -36 26 L28 26 C40 26 50 22 57 14 Z"/>
+    <path fill="#000" opacity=".16" d="M58 6 L122 -4 L124 -2 L58 14 Z"/>
+    <path fill="#D6EBE8" d="M-54 0 C-52 -16 -40 -26 -20 -27 L-12 -27 L-12 2 Z"/>
+    <path d="M-44 -12 C-40 -19 -33 -22 -26 -23" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
+    <rect x="0" y="-24" width="22" height="15" rx="4" fill="#D6EBE8"/>
+    <path d="M-26 26 L-30 38 M22 26 L26 38 M-44 38 L40 38 M-44 38 Q-52 38 -54 32" fill="none" stroke="#34474B" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="-4" y="26" width="8" height="5" fill="#34474B"/>
+    <circle cx="124" cy="-3" r="3" fill="#F3C44E"/>
+  </g>
+</svg>
