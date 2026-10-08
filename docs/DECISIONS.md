@@ -44,3 +44,12 @@ F6 · İniş efekti · "Yumuşak/sert iniş" bırakma anında (ss:released) teti
 F6 · PERFECT perdesi · Seri n. ardışık PERFECT'te +(n−1) yarım ton, en fazla +8 · "ilk perfect temel perde"
 F6 · Döngü sesleri · Rotor ve yağmur WebAudio gürültü döngüleri uygulandı (opsiyonel, bütçe sorunu yok) · §14
 F6 · Sessizlik · Sekme gizlenince AudioContext.suspend, geri gelince resume (ses açıksa); ilk pointerdown'a kadar hiçbir ses çalmaz · tarayıcı autoplay
+F7 · Tuning tek örnek · `getTuning()` tek ve canlı düzenlenebilir nesne döner (varsayılan + `ss.tuning` yerinde birleşir); Save tüm nesneyi yazar, Reset yerinde geri yükler · panel sahnelerin tuttuğu referansı da değiştirebilsin
+F7 · Daily akışı · DAILY butonu bugünün tohumuyla READY'de bekleyen koşu kurar; deneme ilk sürüklemede (AGAIN'de hemen) harcanır, günün oynandı sayılması da o an · uygulamayı kapatıp deneme kaçırma yok
+F7 · Daily rekoru · Normal `ss.best` ile ayrı; NEW BEST sadece normal modda · §12
+F7 · Daily bitince · Kalan deneme 0 ise AGAIN "PLAY NORMAL" olur ve normal koşu başlatır; kalan varsa aynı tohumla yeni deneme · §11.4
+F7 · bestShip · Ulaşılan gemi numarası (shipIndex+1) · "en iyi gemi" tanımı belirsiz
+F7 · "So close" · 0 < rekor−skor ≤ max(3, %10 rekor) ve skor > 0 · GDD sayısal eşik vermiyor
+F7 · Debug koşusu · `?score=N` ile başlayan koşular depolamayı (stats, rekor, daily) güncellemez · test koşuları kayıtları bozmasın
+F7 · Seri ve PAPER/GOLD · Opsiyoneller uygulandı (daily seri sayacı, 5 gün PAPER, platin GOLD) · bütçe uyarısı yok
+F7 · Paylaşım satırı · Gemi sayısı = ulaşılan gemi numarası (shipIndex+1), tekil "1 ship" · §15.3 örneği "3 ships"

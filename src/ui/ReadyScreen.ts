@@ -55,8 +55,10 @@ export class ReadyScreen {
   /** Daily butonu: sayı #N ve kalan deneme; kapalıysa gizlenir. */
   setDaily(on: boolean, n = 0, left = 0): void {
     this.dailyOn = on;
+    this.daily.enabled = left > 0;
+    this.daily.root.setAlpha(left > 0 ? 1 : 0.5);
     this.dailySub = fmt(STRINGS.dailyBtn, { n, k: left });
-    this.daily.sub?.setText(this.dailySub);
+    if (this.daily.sub) setText(this.daily.sub, this.dailySub);
   }
 
   show(v: boolean): void {
@@ -65,9 +67,9 @@ export class ReadyScreen {
     if (v) this.daily.root.setVisible(this.dailyOn);
   }
 
-  update(W: number, H: number, best: number): void {
+  update(W: number, H: number, best: number, tag: string | null): void {
     this.logo.setX(W / 2);
-    setText(this.bestText, `${STRINGS.best} ${best}`);
+    setText(this.bestText, tag ?? `${STRINGS.best} ${best}`);
     this.hand.setPosition(W / 2 - 35, H * 0.52);
     this.hint.setPosition(W / 2, H * 0.52 + 60);
     const list = this.dailyBtns.filter((b) => b !== this.daily || this.dailyOn);

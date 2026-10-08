@@ -2,6 +2,7 @@ import type { Tuning } from '../config/tuning';
 
 export type RunState = 'READY' | 'PLAYING' | 'SWAPPING' | 'FAILING' | 'GAME_OVER' | 'PAUSED';
 export type FailKind = 'splash' | 'crash' | 'topple';
+export type RunMode = 'normal' | 'daily';
 
 export interface StackResult {
   base: number;
@@ -24,6 +25,9 @@ export class Run {
   delivered = 0;
   perfects = 0;
   failKind: FailKind | null = null;
+  mode: RunMode = 'normal';
+  /** Teslim edilen her kargo: 'c' sıradan, 'p' PERFECT (paylaşım satırı) */
+  log: ('c' | 'p')[] = [];
   /** PAUSED öncesi durum */
   private pausedFrom: RunState = 'PLAYING';
 
@@ -38,6 +42,7 @@ export class Run {
     this.delivered = 0;
     this.perfects = 0;
     this.failKind = null;
+    this.log = [];
   }
 
   get quota(): number {
@@ -74,6 +79,7 @@ export class Run {
     this.score += gained;
     this.stacked++;
     this.delivered++;
+    this.log.push(perfect ? 'p' : 'c');
     return { base: points, perfectBonus, steadyBonus, gained, perfect, steady, streak: this.streak };
   }
 

@@ -84,25 +84,64 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-function deepMerge(base: unknown, over: unknown): unknown {
-  if (Array.isArray(base)) return Array.isArray(over) ? over : base;
-  if (isPlainObject(base) && isPlainObject(over)) {
-    const out: Record<string, unknown> = { ...base };
-    for (const k of Object.keys(over)) {
-      out[k] = k in base ? deepMerge(base[k], over[k]) : over[k];
+/** `over` içindeki sayıları/dizileri `target` üzerine yerinde yazar; bilinmeyen anahtarlar yok sayılır. */
+function assignDeep(target: unknown, over: unknown): void {
+  if (!isPlainObject(target) || !isPlainObject(over)) return;
+  for (const k of Object.keys(over)) {
+    if (!(k in target)) continue;
+    const t = target[k];
+    const o = over[k];
+    if (Array.isArray(t)) {
+      if (Array.isArray(o)) {
+        o.forEach((item, i) => {
+          if (i >= t.length) return;
+          if (isPlainObject(t[i])) assignDeep(t[i], item);
+          else if (typeof item === typeof t[i]) t[i] = item;
+        });
+      }
+    } else if (isPlainObject(t)) {
+      assignDeep(t, o);
+    } else if (typeof o === typeof t) {
+      target[k] = o;
     }
-    return out;
   }
-  return over === undefined || typeof over !== typeof base ? base : over;
 }
 
-/** TUNING varsayılanları ile localStorage `ss.tuning` geçersiz kılmalarını derin birleştirir. */
-export function getTuning(): Tuning {
+function readOverrides(): unknown {
   try {
     const raw = globalThis.localStorage?.getItem(TUNING_KEY);
-    if (!raw) return TUNING;
-    return deepMerge(TUNING, JSON.parse(raw)) as Tuning;
+    return raw ? JSON.parse(raw) : null;
   } catch {
-    return TUNING;
+    return null;
   }
+}
+
+let current: Tuning | null = null;
+
+/** TUNING varsayılanları ile `ss.tuning` geçersiz kılmalarının derin birleşimi. Tek örnek: panel bunu canlı düzenler. */
+export function getTuning(): Tuning {
+  if (!current) {
+    current = structuredClone(TUNING) as Tuning;
+    assignDeep(current, readOverrides());
+  }
+  return current;
+}
+
+/** Panelden Save: geçerli değerleri `ss.tuning`'e yazar. */
+export function saveTuning(): void {
+  try {
+    globalThis.localStorage?.setItem(TUNING_KEY, JSON.stringify(getTuning()));
+  } catch {
+    /* kayıt yoksa sessizce geç */
+  }
+}
+
+/** Panelden Reset: varsayılanlara döner ve `ss.tuning`'i siler. */
+export function resetTuning(): void {
+  try {
+    globalThis.localStorage?.removeItem(TUNING_KEY);
+  } catch {
+    /* yoksay */
+  }
+  assignDeep(getTuning(), TUNING);
 }

@@ -5,6 +5,8 @@ import { PRIVACY_URL } from '../config/app';
 import { STRINGS, fmt } from '../config/strings';
 import { getItem, setItem } from '../core/storage';
 import { evaluateUnlocks } from '../core/unlocks';
+import { toggleTuningPanel } from '../core/tuningPanel';
+import { card, label } from '../ui/components';
 import type { GameScene } from './GameScene';
 import { Fx } from '../game/Fx';
 import { play } from '../core/audio';
@@ -91,6 +93,8 @@ export class UIScene extends Phaser.Scene {
     on('ss:hooked', (() => this.onboarding.onHooked()) as never);
     on('ss:dragMove', (() => this.onboarding.onDragMove()) as never);
     on('ss:gameover', (() => this.openPanel()) as never);
+    on('ss:toast', ((t: string) => this.toast(t)) as never);
+    on('ss:tune', (() => void toggleTuningPanel()) as never);
   }
 
   // ───────── geçişler ─────────
@@ -124,27 +128,29 @@ export class UIScene extends Phaser.Scene {
     this.game.events.emit('ss:home');
   }
 
-  private medalFor(score: number): GameOverData['medal'] {
-    const m = this.T.medals;
-    if (score >= m.platinum) return 'platinum';
-    if (score >= m.gold) return 'gold';
-    if (score >= m.silver) return 'silver';
-    if (score >= m.bronze) return 'bronze';
-    return null;
+  private toast(text: string): void {
+    const t = label(this, text, 18, '#24353A', '600');
+    const c = this.add
+      .container(this.scale.width / 2, this.scale.height - 90, [card(this, t.width + 40, 44), t])
+      .setDepth(200);
+    this.tweens.add({ targets: c, alpha: 0, y: c.y - 24, delay: 900, duration: 400, onComplete: () => c.destroy() });
   }
 
   private openPanel(): void {
     const run = this.gs.run;
+    const sum = this.gs.summary;
+    const daily = run.mode === 'daily';
+    const left = this.gs.triesLeftNow();
     const data: GameOverData = {
       kind: run.failKind ?? 'splash',
       score: run.score,
-      best: this.gs.best,
+      best: this.gs.panelBest(),
       newBest: this.gs.newBest,
-      medal: this.medalFor(run.score),
-      message: fmt(STRINGS.delivered, { n: run.delivered }),
+      medal: sum?.medal ?? null,
+      message: sum?.message ?? fmt(STRINGS.delivered, { n: run.delivered }),
       canSecondChance: false,
-      daily: null,
-      playNormal: false,
+      daily: daily ? { triesText: fmt(STRINGS.triesLeft, { n: left }) } : null,
+      playNormal: daily && left <= 0,
     };
     this.over.show(data, this.scale.width, this.scale.height, this.T.fx.gameOverInputLock);
     // NEW BEST: konfeti, fanfar; madalya: zil (panel kayarken)
@@ -188,8 +194,10 @@ export class UIScene extends Phaser.Scene {
     this.settings.show(ov === 'settings');
     if (state !== 'GAME_OVER' && this.over.isOpen) this.over.hide();
 
-    this.ready.update(W, H, this.gs.best);
-    this.hud.update(W, run, this.gs.best, null);
+    const k = this.gs.triesLeftNow();
+    this.ready.setDaily(true, this.gs.dailyNumber(), k);
+    this.ready.update(W, H, this.gs.best, this.gs.modeTag());
+    this.hud.update(W, run, this.gs.best, this.gs.modeTag());
     this.pausePanel.layout(W, H);
     this.hangar.layout(W, H);
     this.settings.layout(W, H);

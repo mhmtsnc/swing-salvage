@@ -2,6 +2,13 @@ import Phaser from 'phaser';
 import { getTuning, type Tuning } from '../config/tuning';
 import { PALETTE } from '../config/palette';
 import { createRng } from '../core/rng';
+import { dailyInfo, finishAttempt, startAttempt, triesLeft } from '../core/daily';
+import { summarizeRun, type Summary } from '../core/summary';
+import { buildShareText, type ShareInput } from '../core/share';
+import { shareText } from '../core/shareAction';
+import { toggleTuningPanel } from '../core/tuningPanel';
+import { STORE_URL } from '../config/app';
+import { STRINGS, fmt } from '../config/strings';
 import { FixedStepper, STEP_MS, toStepAcc } from '../core/time';
 import { getItem, setItem } from '../core/storage';
 import { difficultyAt } from '../game/Difficulty';
@@ -10,7 +17,7 @@ import { Rope } from '../game/Rope';
 import { Cargo } from '../game/Cargo';
 import { Sea, waterY, waterYMid } from '../game/Sea';
 import { Ship } from '../game/Ship';
-import { Run, type FailKind } from '../game/Run';
+import { Run, type FailKind, type RunMode } from '../game/Run';
 import { Spawner } from '../game/Spawner';
 import { Weather } from '../game/Weather';
 import { WeatherFx } from '../game/WeatherFx';
@@ -31,7 +38,12 @@ const CAMERA_FX_MS = 400;
 export class GameScene extends Phaser.Scene {
   run!: Run;
   newBest = false;
+  /** Normal mod rekoru */
   best = 0;
+  mode: RunMode = 'normal';
+  summary: Summary | null = null;
+  private attemptConsumed = false;
+  private lastShare: ShareInput | null = null;
   private T!: Tuning;
   private stepper = new FixedStepper();
   private simTime = 0;
@@ -73,8 +85,8 @@ export class GameScene extends Phaser.Scene {
     this.measure();
 
     this.sea = new Sea(this);
-    this.waveAmp = difficultyAt(this.startScore).waveAmp;
-    this.ship = new Ship(this, this.T, this.seaY, difficultyAt(this.startScore).rollAmpDeg);
+    this.waveAmp = difficultyAt(this.startScore, this.T.difficulty).waveAmp;
+    this.ship = new Ship(this, this.T, this.seaY, difficultyAt(this.startScore, this.T.difficulty).rollAmpDeg);
     this.heli = new Helicopter(this, this.T, { W: this.W, seaY: this.seaY });
     this.rope = new Rope(this, this.T, this.heli.winchPoint());
     const seedParam = Number(q.get('seed'));
@@ -83,16 +95,18 @@ export class GameScene extends Phaser.Scene {
     this.fx = new Fx(this);
     this.fb = new Feedback(this, this.fx, this.T);
     this.makeRngs();
-    this.rainLevel = difficultyAt(this.startScore).rain;
+    this.rainLevel = difficultyAt(this.startScore, this.T.difficulty).rain;
     this.best = getItem('ss.best');
-    this.run.reset('READY', this.startScore);
+    this.startRun('READY');
     this.spawnAt = 0;
+    if (q.get('tune') === '1') void toggleTuningPanel();
 
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
       const s = this.run.state;
       if (this.blockedByUi(p.x, p.y)) return;
       if (s === 'READY') {
         this.run.start();
+        this.consumeAttempt();
         this.game.events.emit('ss:started');
       }
       if (s === 'READY' || s === 'PLAYING' || s === 'SWAPPING') this.heli.pointerDown(p.x, p.y);
@@ -108,6 +122,8 @@ export class GameScene extends Phaser.Scene {
     this.game.events.on('ss:resume', this.resumeGame, this);
     this.game.events.on('ss:home', this.home, this);
     this.game.events.on('ss:paint', this.onPaint, this);
+    this.game.events.on('ss:daily', this.armDaily, this);
+    this.game.events.on('ss:share', this.shareRun, this);
     document.addEventListener('visibilitychange', this.onVisibility);
 
     if (q.get('debug') === '1') {
@@ -125,6 +141,8 @@ export class GameScene extends Phaser.Scene {
       this.game.events.off('ss:resume', this.resumeGame, this);
       this.game.events.off('ss:home', this.home, this);
       this.game.events.off('ss:paint', this.onPaint, this);
+      this.game.events.off('ss:daily', this.armDaily, this);
+      this.game.events.off('ss:share', this.shareRun, this);
       document.removeEventListener('visibilitychange', this.onVisibility);
     });
   }
@@ -145,7 +163,7 @@ export class GameScene extends Phaser.Scene {
     if (Math.abs(oldSea - this.seaY) > 0.5 && (this.run.state === 'READY' || this.run.state === 'GAME_OVER')) {
       const state = this.run.state;
       this.resetWorld();
-      this.run.reset(state, this.startScore);
+      this.startRun(state);
     }
   }
 
@@ -155,7 +173,7 @@ export class GameScene extends Phaser.Scene {
 
   /** Her koşu için ayrı akışlar: kargo sırası (spawnRng) ve hava (weatherRng). */
   private makeRngs(): void {
-    this.seed = this.fixedSeed ?? (Date.now() >>> 0);
+    this.seed = this.fixedSeed ?? (this.mode === 'daily' ? this.dailyNow().seed : Date.now() >>> 0);
     this.spawner = new Spawner(createRng(`${this.seed}:spawn`), this.T);
     this.weather = new Weather(createRng(`${this.seed}:weather`), this.T, {
       onGustWarn: (dir) => {
@@ -203,8 +221,9 @@ export class GameScene extends Phaser.Scene {
   home(): void {
     if (this.run.state !== 'PAUSED' && this.run.state !== 'GAME_OVER') return;
     this.tweens.resumeAll();
+    this.mode = 'normal';
     this.resetWorld();
-    this.run.reset('READY', this.startScore);
+    this.startRun('READY');
     this.game.events.emit('ss:homed');
   }
 
@@ -266,7 +285,7 @@ export class GameScene extends Phaser.Scene {
     this.oldShip = null;
     this.ship.destroy();
     this.measure();
-    const d = difficultyAt(this.startScore);
+    const d = difficultyAt(this.startScore, this.T.difficulty);
     this.waveAmp = d.waveAmp;
     this.ship = new Ship(this, this.T, this.seaY, d.rollAmpDeg);
     this.heli.setBounds(this.W, this.seaY);
@@ -276,6 +295,8 @@ export class GameScene extends Phaser.Scene {
     this.rainLevel = d.rain;
     this.failLeft = 0;
     this.newBest = false;
+    this.summary = null;
+    this.attemptConsumed = false;
     this.stepper.reset();
     const cam = this.cameras.main;
     cam.resetFX();
@@ -286,8 +307,54 @@ export class GameScene extends Phaser.Scene {
 
   private again(): void {
     if (this.run.state !== 'GAME_OVER') return;
+    if (this.mode === 'daily' && this.triesLeftNow() <= 0) this.mode = 'normal';
     this.resetWorld();
-    this.run.reset('PLAYING', this.startScore);
+    this.startRun('PLAYING');
+    this.consumeAttempt();
+  }
+
+  private startRun(state: 'READY' | 'PLAYING' | 'GAME_OVER'): void {
+    this.run.reset(state, this.startScore);
+    this.run.mode = this.mode;
+  }
+
+  // ───────── Daily Storm ─────────
+
+  private get persist(): boolean {
+    return this.startScore === 0;
+  }
+
+  private dailyNow() {
+    return dailyInfo(new Date(), this.T.daily.epochUtc);
+  }
+
+  dailyNumber(): number {
+    return this.dailyNow().number;
+  }
+
+  triesLeftNow(): number {
+    return triesLeft(getItem('ss.daily'), this.dailyNow().date, this.T.daily.attemptsPerDay);
+  }
+
+  /** DAILY butonu: bugünün tohumuyla hazır bekleyen koşu. Deneme ilk sürüklemede harcanır. */
+  private armDaily(): void {
+    if (this.run.state !== 'READY' || this.triesLeftNow() <= 0) return;
+    this.mode = 'daily';
+    this.resetWorld();
+    this.startRun('READY');
+  }
+
+  private consumeAttempt(): void {
+    if (this.mode !== 'daily' || this.attemptConsumed) return;
+    this.attemptConsumed = true;
+    if (this.persist) setItem('ss.daily', startAttempt(getItem('ss.daily'), this.dailyNow().date));
+  }
+
+  /** SHARE: son koşunun spoiler vermeyen emoji satırı. */
+  private async shareRun(): Promise<void> {
+    if (!this.lastShare) return;
+    const out = await shareText(buildShareText(this.lastShare));
+    if (out === 'copied') this.game.events.emit('ss:toast', STRINGS.copied);
   }
 
   // ───────── sabit adım ─────────
@@ -306,7 +373,7 @@ export class GameScene extends Phaser.Scene {
 
   private fixedStep(): void {
     const run = this.run;
-    const d = difficultyAt(run.score);
+    const d = difficultyAt(run.score, this.T.difficulty);
     this.waveAmp += Phaser.Math.Clamp(d.waveAmp - this.waveAmp, -WAVE_RATE / 60, WAVE_RATE / 60);
     this.ship.step(d.rollAmpDeg, d.rollPeriod);
 
@@ -536,7 +603,7 @@ export class GameScene extends Phaser.Scene {
       onComplete: () => {
         old.destroy();
         this.oldShip = null;
-        const d = difficultyAt(this.run.score);
+        const d = difficultyAt(this.run.score, this.T.difficulty);
         const next = new Ship(this, this.T, this.seaY, d.rollAmpDeg);
         next.offsetX = OLD_SHIP_EXIT_X;
         this.ship = next;
@@ -582,7 +649,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.heli.render(delta / 1000);
     this.rope.draw();
-    const dRain = difficultyAt(run.score).rain;
+    const dRain = difficultyAt(run.score, this.T.difficulty).rain;
     this.rainLevel += Phaser.Math.Clamp(dRain - this.rainLevel, -delta / 1000, delta / 1000);
     this.weatherFx.setRain(this.rainLevel);
     this.weatherFx.update(this.weather, this.W, this.H, delta / 1000);
@@ -605,12 +672,52 @@ export class GameScene extends Phaser.Scene {
   private finishFail(): void {
     const run = this.run;
     run.gameOver();
-    this.best = getItem('ss.best');
-    this.newBest = run.score > this.best;
-    if (this.newBest) {
-      setItem('ss.best', run.score);
-      this.best = run.score;
+    const today = this.dailyNow().date;
+    let daily = getItem('ss.daily');
+    if (run.mode === 'daily') daily = finishAttempt(daily, today, run.score);
+    const prevBest = getItem('ss.best');
+    const sum = summarizeRun({
+      result: {
+        score: run.score,
+        delivered: run.delivered,
+        perfects: run.perfects,
+        shipsReached: run.shipIndex + 1,
+        mode: run.mode,
+      },
+      stats: getItem('ss.stats'),
+      bestNormal: prevBest,
+      daily,
+      prevUnlocks: getItem('ss.unlocks'),
+    });
+    if (this.persist) {
+      if (run.mode === 'daily') setItem('ss.daily', daily);
+      setItem('ss.stats', sum.stats);
+      setItem('ss.unlocks', sum.unlocked);
+      if (sum.newBest) setItem('ss.best', run.score);
     }
+    this.summary = sum;
+    this.newBest = sum.newBest;
+    this.best = Math.max(prevBest, sum.newBest ? run.score : 0);
+    this.lastShare = {
+      mode: run.mode,
+      dailyNumber: this.dailyNow().number,
+      score: run.score,
+      ships: run.shipIndex + 1,
+      perfects: run.perfects,
+      log: run.log,
+      death: run.failKind,
+      storeUrl: STORE_URL,
+    };
     this.game.events.emit('ss:gameover');
+  }
+
+  /** Game over panelinde gösterilen rekor (Daily'de günün en iyisi). */
+  panelBest(): number {
+    return this.mode === 'daily' ? getItem('ss.daily').best : this.best;
+  }
+
+  /** HUD/READY etiketi: Daily modunda "DAILY #12". */
+  modeTag(): string | null {
+    return this.mode === 'daily' ? fmt(STRINGS.dailyTag, { n: this.dailyNumber() }) : null;
   }
 }
