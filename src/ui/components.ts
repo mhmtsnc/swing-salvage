@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { PALETTE, hex } from '../config/palette';
+import { play } from '../core/audio';
 
 export const FONT = 'Fredoka';
 export const MIN_TAP = 48;
@@ -149,6 +150,7 @@ export class Button {
 
     this.zone.on('pointerdown', () => {
       if (!this.enabled) return;
+      play('tap');
       scene.tweens.add({ targets: this.root, scale: 0.95, duration: 60 });
     });
     const release = (fire: boolean) => {

@@ -6,6 +6,9 @@ import { STRINGS, fmt } from '../config/strings';
 import { getItem, setItem } from '../core/storage';
 import { evaluateUnlocks } from '../core/unlocks';
 import type { GameScene } from './GameScene';
+import { Fx } from '../game/Fx';
+import { play } from '../core/audio';
+import { haptic } from '../core/haptics';
 import type { Button } from '../ui/components';
 import { GameOverPanel, type GameOverData } from '../ui/GameOverPanel';
 import { HangarScreen } from '../ui/HangarScreen';
@@ -28,6 +31,7 @@ export class UIScene extends Phaser.Scene {
   private hangar!: HangarScreen;
   private settings!: SettingsScreen;
   private onboarding!: Onboarding;
+  private fx!: Fx;
   private overlay: Overlay = 'none';
   private lastState = '';
 
@@ -65,6 +69,7 @@ export class UIScene extends Phaser.Scene {
       onTune: () => ev.emit('ss:tune'),
     });
     this.onboarding = new Onboarding(this);
+    this.fx = new Fx(this, 60);
 
     // Sıra: arka → ön
     for (const root of [this.ready.root, this.hud.root, this.pausePanel.root, this.over.root, this.hangar.root, this.settings.root]) {
@@ -142,11 +147,26 @@ export class UIScene extends Phaser.Scene {
       playNormal: false,
     };
     this.over.show(data, this.scale.width, this.scale.height, this.T.fx.gameOverInputLock);
+    // NEW BEST: konfeti, fanfar; madalya: zil (panel kayarken)
+    if (data.newBest) {
+      this.time.delayedCall(250, () => {
+        this.fx.confetti(this.scale.width / 2, this.scale.height * 0.4, 36);
+        play('new_best');
+        haptic('success');
+      });
+    }
+    if (data.medal) {
+      this.time.delayedCall(550, () => {
+        play('medal');
+        haptic('light');
+      });
+    }
   }
 
   // ───────── çerçeve döngüsü ─────────
 
-  update(): void {
+  update(_time: number, delta: number): void {
+    this.fx.update(delta / 1000);
     const run = this.gs?.run;
     if (!run) return;
     const { width: W, height: H } = this.scale;

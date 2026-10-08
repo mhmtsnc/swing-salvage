@@ -14,6 +14,9 @@ import { Run, type FailKind } from '../game/Run';
 import { Spawner } from '../game/Spawner';
 import { Weather } from '../game/Weather';
 import { WeatherFx } from '../game/WeatherFx';
+import { Fx } from '../game/Fx';
+import { Feedback } from '../game/Feedback';
+import { loops } from '../core/audio';
 import { classifyPlacement, findBelow } from '../game/placement';
 import { mastRect, rectWorldAabb, shipParts, slotCentersWorld, worldToShip } from '../game/shipModel';
 
@@ -45,6 +48,8 @@ export class GameScene extends Phaser.Scene {
   private spawner!: Spawner;
   private weather!: Weather;
   private weatherFx!: WeatherFx;
+  private fx!: Fx;
+  private fb!: Feedback;
   private rainLevel = 0;
   private fixedSeed: number | null = null;
   seed = 0;
@@ -75,6 +80,8 @@ export class GameScene extends Phaser.Scene {
     const seedParam = Number(q.get('seed'));
     this.fixedSeed = Number.isFinite(seedParam) && q.get('seed') ? seedParam : null;
     this.weatherFx = new WeatherFx(this);
+    this.fx = new Fx(this);
+    this.fb = new Feedback(this, this.fx, this.T);
     this.makeRngs();
     this.rainLevel = difficultyAt(this.startScore).rain;
     this.best = getItem('ss.best');
@@ -151,14 +158,20 @@ export class GameScene extends Phaser.Scene {
     this.seed = this.fixedSeed ?? (Date.now() >>> 0);
     this.spawner = new Spawner(createRng(`${this.seed}:spawn`), this.T);
     this.weather = new Weather(createRng(`${this.seed}:weather`), this.T, {
-      onGustWarn: (dir) => this.game.events.emit('ss:gustWarn', dir),
+      onGustWarn: (dir) => {
+        this.fb.gustWarn();
+        this.game.events.emit('ss:gustWarn', dir);
+      },
       onGustStart: (dir) => this.game.events.emit('ss:gustStart', dir),
       onGustEnd: () => this.game.events.emit('ss:gustEnd'),
       onLightning: (x) => {
         this.weatherFx.lightning(x, this.W);
         this.game.events.emit('ss:lightning');
       },
-      onThunder: () => this.game.events.emit('ss:thunder'),
+      onThunder: () => {
+        this.fb.thunder();
+        this.game.events.emit('ss:thunder');
+      },
     });
   }
 
@@ -288,6 +301,7 @@ export class GameScene extends Phaser.Scene {
     const c = new Cargo(this, this.T, pick.type, pick.x);
     this.cargos.push(c);
     this.active = c;
+    this.fb.spawned(pick.x, waterY(pick.x, this.simTime, this.seaY, this.waveAmp) - 10);
   }
 
   private fixedStep(): void {
@@ -345,6 +359,7 @@ export class GameScene extends Phaser.Scene {
     if (Math.hypot(hp.x - top.x, hp.y - top.y) < this.T.hook.pickupRadius) {
       c.pickUp(this.matter, this.simTime);
       this.rope.attach(c.body as MatterJS.BodyType, { x: 0, y: -c.h / 2 }, c.w / 2);
+      this.fb.hooked(c);
       this.game.events.emit('ss:hooked');
     }
   }
@@ -386,6 +401,7 @@ export class GameScene extends Phaser.Scene {
       impact: c.impact,
       rules: r,
     });
+    this.fb.released(box.x, box.y + c.h / 2, c.w, c.h, c.placement.hard);
     c.state = 'SETTLING';
     c.calmTime = 0;
     c.contactTime = 0;
@@ -411,6 +427,7 @@ export class GameScene extends Phaser.Scene {
       const loc = worldToShip(pose, this.ship.params, c.body.position);
       c.stackedLocal = { x: loc.x, y: loc.y, angle: c.body.angle - pose.angle };
       const res = this.run.onStacked(c.points, c.placement?.perfect ?? false);
+      this.fb.placed(c.body.position.x, c.body.position.y, res.perfect, res.steady, res.streak);
       this.game.events.emit('ss:placed', {
         x: c.body.position.x,
         y: c.body.position.y,
@@ -431,11 +448,11 @@ export class GameScene extends Phaser.Scene {
       if (!c.body) continue;
       if (c.state === 'CARRIED') {
         if (t - c.pickedAt >= r.carriedGrace && c.bottom() > waterY(c.centerX, t, this.seaY, this.waveAmp) + r.waterMargin) {
-          return this.triggerFail('splash', c.body.position);
+          return this.triggerFail('splash', c.body.position, c);
         }
       } else if (c.state === 'SETTLING' || c.state === 'STACKED') {
         if (c.bottom() > waterYMid(c.centerX, t, this.seaY, this.waveAmp) + r.waterMargin) {
-          return this.triggerFail('splash', c.body.position);
+          return this.triggerFail('splash', c.body.position, c);
         }
       }
     }
@@ -448,14 +465,14 @@ export class GameScene extends Phaser.Scene {
       for (const rect of [parts.bridge, mastRect(this.seaY, this.T.ship)]) {
         const a = rectWorldAabb(pose, params, rect);
         if (hb.right > a.x0 && hb.x < a.x1 && hb.bottom > a.y0 && hb.y < a.y1) {
-          return this.triggerFail('crash', { x: this.heli.x, y: this.heli.y });
+          return this.triggerFail('crash', { x: this.heli.x, y: this.heli.y }, null);
         }
       }
       for (const c of this.cargos) {
         if ((c.state !== 'SETTLING' && c.state !== 'STACKED') || !c.body) continue;
         const b = c.body.bounds;
         if (hb.right > b.min.x && hb.x < b.max.x && hb.bottom > b.min.y && hb.y < b.max.y) {
-          return this.triggerFail('crash', { x: this.heli.x, y: this.heli.y });
+          return this.triggerFail('crash', { x: this.heli.x, y: this.heli.y }, null);
         }
       }
     }
@@ -470,14 +487,15 @@ export class GameScene extends Phaser.Scene {
         loc.y - c.stackedLocal.y > r.toppleDrop ||
         Math.abs((da * 180) / Math.PI) > r.toppleAngleDeg
       ) {
-        return this.triggerFail('topple', c.body.position);
+        return this.triggerFail('topple', c.body.position, c);
       }
     }
   }
 
-  private triggerFail(kind: FailKind, at: { x: number; y: number }): void {
+  private triggerFail(kind: FailKind, at: { x: number; y: number }, culprit: Cargo | null): void {
     if (this.run.state === 'FAILING') return;
     this.run.fail(kind);
+    this.fb.fail(kind, at.x, kind === 'splash' ? this.seaY : at.y, culprit, this.heli.images());
     this.failLeft = this.T.fx.failSlowMoTime;
     this.heli.pointerUp();
     const cam = this.cameras.main;
@@ -494,6 +512,7 @@ export class GameScene extends Phaser.Scene {
     if (this.run.state !== 'PLAYING' || !this.run.shipFull) return;
     if (this.cargos.some((c) => c.state === 'SETTLING' || c.state === 'FLOATING' || c.state === 'CARRIED')) return;
     const bonus = this.run.beginSwap();
+    this.fb.shipFull(this.W * 0.3, this.seaY - 140);
     this.game.events.emit('ss:shipFull', { bonus });
 
     const s = this.T.ship;
@@ -567,6 +586,12 @@ export class GameScene extends Phaser.Scene {
     this.rainLevel += Phaser.Math.Clamp(dRain - this.rainLevel, -delta / 1000, delta / 1000);
     this.weatherFx.setRain(this.rainLevel);
     this.weatherFx.update(this.weather, this.W, this.H, delta / 1000);
+    this.fx.update(delta / 1000);
+    loops.update(
+      run.state === 'PLAYING' || run.state === 'SWAPPING' || run.state === 'READY',
+      Math.hypot(this.heli.vx, this.heli.vy) / this.T.heli.maxSpeed,
+      this.rainLevel,
+    );
 
     if (this.debugText) {
       this.debugText.setText(

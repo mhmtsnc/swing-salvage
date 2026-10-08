@@ -51,6 +51,10 @@ export class Cargo {
     this.gfx = scene.add.image(baseX, 0, `cargo_${type}`).setDepth(9);
   }
 
+  get sprite(): Phaser.GameObjects.Image {
+    return this.gfx;
+  }
+
   get points(): number {
     return this.t.cargo[this.type].points;
   }

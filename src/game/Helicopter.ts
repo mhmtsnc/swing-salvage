@@ -130,6 +130,11 @@ export class Helicopter {
     return new Phaser.Geom.Rectangle(this.x - hitboxW / 2, this.y - hitboxH / 2, hitboxW, hitboxH);
   }
 
+  /** Kırmızı yanıp sönme için görsel parçalar. */
+  images(): Phaser.GameObjects.Image[] {
+    return [this.bodyImg];
+  }
+
   /** Boya değişimi: doku anında yenilenir. */
   setPaint(id: string): void {
     this.bodyImg.setTexture(`heli_${id}`);

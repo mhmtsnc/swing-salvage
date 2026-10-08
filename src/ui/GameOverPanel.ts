@@ -114,6 +114,14 @@ export class GameOverPanel {
     if (d.medal) g.fillStyle(hex(MEDAL_COLORS[d.medal]), 1).fillCircle(0, 0, 36).lineStyle(3, 0xffffff, 0.6).strokeCircle(0, 0, 28);
     else g.fillStyle(hex(PALETTE.uiTextSoft), 0.15).fillCircle(0, 0, 36);
     this.medalName.setText(d.medal ? STRINGS.medals[d.medal] : '');
+    this.scene.tweens.killTweensOf(this.medalDisc);
+    if (d.medal) {
+      // madalya 0,3 sn büyüyerek gelir
+      this.medalDisc.setScale(0);
+      this.scene.tweens.add({ targets: this.medalDisc, scale: 1, duration: 300, delay: SLIDE_MS, ease: 'Back.easeOut' });
+    } else {
+      this.medalDisc.setScale(1);
+    }
 
     // yerleşim (panel merkezine göre)
     const scH = d.canSecondChance ? 74 : 0;

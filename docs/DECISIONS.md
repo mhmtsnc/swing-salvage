@@ -37,3 +37,10 @@ F5 · UI girdi yalıtımı · UIScene dokunma dikdörtgenlerini ve modal bayrağ
 F5 · Daily ve SHARE · Butonlar/olaylar (ss:daily, ss:share) hazır; asıl bağlantı F7 · F5 kapsamı dışı
 F5 · Hangar · Kilit mantığı saf `core/unlocks.ts` (testli); ilerleme `ss.stats`/`ss.daily`'den okunur · HANGAR gerçek kilitle çalışsın
 F5 · Madalya (geçici) · Game over madalyası skor eşiğinden hesaplanır; "ilk kez kazanılan" mesajı F7 · stats F7'de güncellenir
+F6 · Tint · `setTintFill` Phaser 4'te yok; kırmızı yanıp sönme `setTint().setTintMode(FILL)` · skills/game-object-components
+F6 · Ses · Örnekler `ZZFX.buildSamples` ile bir kez üretilip önbelleğe alınır, perde `playSamples(rate = 2^(yarım ton/12))` ile; ana ses 0,6 · tekrar tekrar sentez maliyeti yok
+F6 · Çok notalı sesler · steady, horn, new_best kısa `setTimeout` dizileridir (ZzFX tek ses üretir) · arpej/fanfar için
+F6 · İniş efekti · "Yumuşak/sert iniş" bırakma anında (ss:released) tetiklenir, sertlik `classifyPlacement.hard` · çarpma hızı zaten orada ölçülüyor
+F6 · PERFECT perdesi · Seri n. ardışık PERFECT'te +(n−1) yarım ton, en fazla +8 · "ilk perfect temel perde"
+F6 · Döngü sesleri · Rotor ve yağmur WebAudio gürültü döngüleri uygulandı (opsiyonel, bütçe sorunu yok) · §14
+F6 · Sessizlik · Sekme gizlenince AudioContext.suspend, geri gelince resume (ses açıksa); ilk pointerdown'a kadar hiçbir ses çalmaz · tarayıcı autoplay
