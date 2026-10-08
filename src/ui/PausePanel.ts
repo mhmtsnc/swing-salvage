@@ -10,7 +10,7 @@ export class PausePanel {
   private panel: Phaser.GameObjects.Container;
 
   constructor(scene: Phaser.Scene, cb: { onResume: () => void; onHome: () => void }) {
-    this.dim = scene.add.rectangle(0, 0, 10, 10, hex('#24353A'), 0.35).setOrigin(0, 0).setInteractive();
+    this.dim = scene.add.rectangle(0, 0, 10, 10, hex('#24353A'), 0.35).setOrigin(0, 0);
     const resume = bigButton(scene, 240, 64, STRINGS.resume, 26, cb.onResume).setPosition(0, 10);
     const home = new Button(scene, 240, 52, [icon(scene, 'home').setPosition(-40, 0), label(scene, STRINGS.home, 16).setPosition(8, 0)], cb.onHome).setPosition(0, 86);
     this.buttons = [resume, home];

@@ -32,7 +32,7 @@ export class SettingsScreen {
     private scene: Phaser.Scene,
     cb: { onBack: () => void; onHowTo: () => void; onPrivacyOptions: () => void; onPolicy: () => void; onTune: () => void },
   ) {
-    this.dim = scene.add.rectangle(0, 0, 10, 10, hex(PALETTE.sky), 0.96).setOrigin(0, 0).setInteractive();
+    this.dim = scene.add.rectangle(0, 0, 10, 10, hex(PALETTE.sky), 0.96).setOrigin(0, 0);
     const s = getItem('ss.settings');
     this.sound = new Toggle(scene, s.sound, (v) => this.save({ sound: v }));
     this.haptics = new Toggle(scene, s.haptics, (v) => this.save({ haptics: v }));

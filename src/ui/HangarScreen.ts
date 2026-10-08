@@ -20,7 +20,7 @@ export class HangarScreen {
   private title: Phaser.GameObjects.Text;
 
   constructor(scene: Phaser.Scene, private cb: { onSelect: (id: PaintId) => void; onBack: () => void }) {
-    this.dim = scene.add.rectangle(0, 0, 10, 10, hex(PALETTE.sky), 0.96).setOrigin(0, 0).setInteractive();
+    this.dim = scene.add.rectangle(0, 0, 10, 10, hex(PALETTE.sky), 0.96).setOrigin(0, 0);
     this.title = label(scene, STRINGS.hangar, 36);
     this.back = new Button(scene, 120, 52, [icon(scene, 'back').setPosition(-30, 0), label(scene, STRINGS.back, 16).setPosition(10, 0)], cb.onBack);
     this.buttons.push(this.back);

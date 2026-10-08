@@ -60,3 +60,7 @@ F8 · SECOND CHANCE sayımı · Devam eden koşuda koşu/kargo/perfect/madalya i
 F8 · RESUMING · Yeni durum; 1 sn'de timeScale 0,3→1, başarısızlık kontrolü kapalı, sonra STACKED referansları yenilenir · §16.2
 F8 · SECOND CHANCE sonrası · Suçlu kargo (CRASH'te yok), TOPPLE'da toppleDrop'tan fazla kayan istif kargoları ve taşınan kargo kaldırılır; yeni kargo nextSpawnDelay sonra doğar · §16.2 adım 1–3
 F8 · Splash/ikon · assets/ PNG'leri `make-icons.mjs` ile üretilir ve `@capacitor/assets` ile android res'e dağıtıldı; splash'ta ön plan zeminin %30'u · §17.6
+F9 · §19 kontrolü · 1) açılış/60 Hz sabit adım: FixedStepper+testler; 2) döngü: GameScene (kancalama→bırakma→oturma→puan→gemi değişimi→3 başarısızlık→AGAIN); 3) zorluk/hava/5 kargo: difficulty, Weather, Spawner testleri; 4) görünüm: art/textures+ui; 5) ses/titreşim: audio.ts, haptics.ts, Feedback.ts; 6) meta: summary/unlocks/daily/share; 7) test/build/tsc temiz; 8) android:sync temiz + RELEASE.md · APK ve tarayıcıda görsel doğrulama kullanıcıda
+F9 · Uç durum · Gemi değişimi tween'i yalnızca SWAPPING iken koşuyu ilerletir (duraklatma/başarısızlıkla çakışma) · SWAPPING'de kargo olmadığı için başarısızlık zaten oluşmaz, ek güvence
+F9 · Uç durum · Çift dokunma: AGAIN `busy` bayrağı + durum kontrolü; yavaş çekim bitmeden panel yok · P4
+F9 · Uç durum · localStorage yoksa `storage.ts` belleğe düşer, `tuning.ts` try/catch · §17.3

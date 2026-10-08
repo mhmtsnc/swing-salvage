@@ -646,6 +646,7 @@ export class GameScene extends Phaser.Scene {
           duration: s.swapEnterTime * 1000,
           ease: 'Quad.easeOut',
           onComplete: () => {
+            if (this.run.state !== 'SWAPPING') return;
             this.run.endSwap();
             this.spawner.resetShip();
             this.weather.newShip();
