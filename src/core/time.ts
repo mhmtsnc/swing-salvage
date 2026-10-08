@@ -21,3 +21,13 @@ export class FixedStepper {
     this.acc = 0;
   }
 }
+
+/** Matter hızları adım başına px. px/s → px/adım. */
+export function toStepVel(pxPerSec: number): number {
+  return pxPerSec / 60;
+}
+
+/** px/s² ivmeyi bir adımda eklenecek hız farkına (px/adım) çevirir: v += a/60 (sn) → /60 (adım). */
+export function toStepAcc(pxPerSec2: number): number {
+  return pxPerSec2 / 3600;
+}
