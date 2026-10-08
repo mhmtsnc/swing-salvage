@@ -10,8 +10,12 @@ export class BootScene extends Phaser.Scene {
 
   create(): void {
     const start = (): void => {
-      this.scene.launch('GameScene');
-      this.scene.launch('UIScene');
+      if (new URLSearchParams(location.search).get('debug') === 'stack') {
+        this.scene.launch('StackDebugScene');
+      } else {
+        this.scene.launch('GameScene');
+        this.scene.launch('UIScene');
+      }
       this.scene.stop();
     };
     Promise.all([

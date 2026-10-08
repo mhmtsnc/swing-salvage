@@ -5,6 +5,7 @@ import { initStorage } from './core/storage';
 import { BootScene } from './scenes/BootScene';
 import { GameScene } from './scenes/GameScene';
 import { UIScene } from './scenes/UIScene';
+import { StackDebugScene } from './scenes/StackDebugScene';
 
 initStorage();
 const T = getTuning();
@@ -30,5 +31,5 @@ new Phaser.Game({
       constraintIterations: T.world.constraintIterations,
     },
   },
-  scene: [BootScene, GameScene, UIScene],
+  scene: [BootScene, GameScene, UIScene, StackDebugScene],
 });

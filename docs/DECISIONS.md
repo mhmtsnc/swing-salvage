@@ -11,3 +11,14 @@ F2 · Test kargosu x · (ship.bowTipX + W − heli.marginX)/2 · GDD doğma böl
 F2 · Respawn · Yeni yüzen kargo sadece SPLASH sıfırlamasında doğar (bırakma/gemi F3'te) · F2 kapsamında bırakma yok
 F2 · Dalga fazları · arka +1.7, orta +0.9, derin +2.4 sn faz kaydırma, ön 0 · GDD "faz kaydırarak" diyor, değer vermiyor
 F2 · SPLASH sıfırlaması · simTime sıfırlanmaz, sadece kargo/heli/kanca başa döner · dalga akışı kesilmesin
+F3 · Gemi yöntemi · Birincil yöntem (kinematik statik gövde, setPosition/setAngle updateVelocity=true) kabul testini (a, b, c, c2, d) Ek A değerleriyle değişiklik gerekmeden geçti (kayma a 2,6 px, b 3,7 px) · yedek yönteme gerek yok
+F3 · Test istifi · "2+2+1" = x 110/210 iki sıra + üstte x 160 tek sandık; (c)/(d) = x 210 sütununda 2 sandık, üst sandık kaydırılmış · GDD yerleşimi tam tarif etmiyor
+F3 · Yalpa fazı · Gemi fazı `phase += dt/period` ile biriktirilir (shipPose'a rollPeriod=1 verilir), genlik 0,5°/sn ile hedefe yaklaşır · skor değişince period/genlik açıda sıçrama yapmasın
+F3 · Göreli hız · Bırakma/oturma/çarpma hızları geminin kendi hızı çıkarılarak ölçülür (px/s = px/adım × 60) · yalpada kargo gemiyle birlikte hareket eder, mutlak hız eşiği aşardı
+F3 · Çarpma hızı · Temasın başladığı adımdan önceki göreli hız; temas 0,5 sn kesilirse pencere sıfırlanır · GDD "temas penceresi" diyor, sınırı belirtmiyor
+F3 · Temas testi · `Query.collides` (sığ örtüşme dahil) ile gemi gövdesi ve SETTLING/STACKED kargolar · Phaser çarpışma olayına bağımlı kalmamak için
+F3 · SWAPPING · CRASH kontrolü kapalı, SPLASH/TOPPLE açık; yeni gemi gövdesi hemen yerinde, sadece görsel soldan kayar · gemi değişiminde helikopter serbest, kargo yok
+F3 · Spawn yeniden çekme · Önceki x'e minSeparation'dan yakınsa bir kez yeniden çekilir, ikincisi ne olursa kabul · §7.7
+F3 · Yeniden başlama · AGAIN doğrudan PLAYING'e geçer (READY atlanır), `?score=N` korunur · "anında yeni koşu"
+F3 · Yeniden boyutlama · seaY değişirse gemi sadece READY/GAME_OVER durumunda yeniden kurulur · oynarken gemi geometrisi sabit kalsın
+F3 · FAILING · Mantık hızı failSlowMo ile yavaşlar (adım biriktirici), kamera %35 kayıp 1.06 zoom, suçlu yanıp sönme F5'e · geçici görsel

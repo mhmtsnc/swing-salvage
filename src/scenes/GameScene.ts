@@ -1,14 +1,33 @@
 import Phaser from 'phaser';
 import { getTuning, type Tuning } from '../config/tuning';
 import { PALETTE } from '../config/palette';
-import { FixedStepper, STEP_MS, toStepAcc } from '../core/time';
+import { STRINGS, fmt } from '../config/strings';
+import { createRng } from '../core/rng';
+import { FixedStepper, STEP_MS } from '../core/time';
+import { getItem, setItem } from '../core/storage';
 import { difficultyAt } from '../game/Difficulty';
 import { Helicopter } from '../game/Helicopter';
 import { Rope } from '../game/Rope';
 import { Cargo } from '../game/Cargo';
-import { Sea, waterY } from '../game/Sea';
+import { Sea, waterY, waterYMid } from '../game/Sea';
+import { Ship } from '../game/Ship';
+import { Run, type FailKind } from '../game/Run';
+import { Spawner } from '../game/Spawner';
+import { classifyPlacement, findBelow } from '../game/placement';
+import { mastRect, rectWorldAabb, shipParts, slotCentersWorld, worldToShip } from '../game/shipModel';
+
+type Collider = { collides(body: MatterJS.BodyType, bodies: MatterJS.BodyType[]): unknown[] };
+
+const OLD_SHIP_EXIT_X = -560;
+const WAVE_RATE = 3; // px/sn: dalga genliği zorlukla yumuşak değişir
+const CAMERA_SHIFT = 0.35;
+const CAMERA_ZOOM = 1.06;
+const CAMERA_FX_MS = 400;
 
 export class GameScene extends Phaser.Scene {
+  run!: Run;
+  newBest = false;
+  best = 0;
   private T!: Tuning;
   private stepper = new FixedStepper();
   private simTime = 0;
@@ -16,10 +35,17 @@ export class GameScene extends Phaser.Scene {
   private H = 0;
   private seaY = 0;
   private waveAmp = 0;
+  private startScore = 0;
   private sea!: Sea;
+  private ship!: Ship;
+  private oldShip: Ship | null = null;
   private heli!: Helicopter;
   private rope!: Rope;
-  private cargo: Cargo | null = null;
+  private spawner!: Spawner;
+  private cargos: Cargo[] = [];
+  private active: Cargo | null = null;
+  private spawnAt = 0;
+  private failLeft = 0;
   private debugText?: Phaser.GameObjects.Text;
 
   constructor() {
@@ -30,21 +56,33 @@ export class GameScene extends Phaser.Scene {
     this.T = getTuning();
     this.matter.world.autoUpdate = false;
     this.cameras.main.setBackgroundColor(PALETTE.sky);
-    this.waveAmp = difficultyAt(0).waveAmp;
+    const q = new URLSearchParams(location.search);
+    this.startScore = Math.max(0, Number(q.get('score')) || 0);
+    this.run = new Run(this.T);
     this.measure();
 
     this.sea = new Sea(this);
+    this.waveAmp = difficultyAt(this.startScore).waveAmp;
+    this.ship = new Ship(this, this.T, this.seaY, difficultyAt(this.startScore).rollAmpDeg);
     this.heli = new Helicopter(this, this.T, { W: this.W, seaY: this.seaY });
     this.rope = new Rope(this, this.T, this.heli.winchPoint());
-    this.spawnCargo();
+    this.spawner = new Spawner(createRng(Date.now() >>> 0), this.T);
+    this.best = getItem('ss.best');
+    this.run.reset('READY', this.startScore);
+    this.spawnAt = 0;
 
-    this.input.on('pointerdown', (p: Phaser.Input.Pointer) => this.heli.pointerDown(p.x, p.y));
+    this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      const s = this.run.state;
+      if (s === 'READY') this.run.start();
+      if (s === 'READY' || s === 'PLAYING' || s === 'SWAPPING') this.heli.pointerDown(p.x, p.y);
+    });
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
       if (p.isDown) this.heli.pointerMove(p.x, p.y);
     });
     this.input.on('pointerup', () => this.heli.pointerUp());
+    this.game.events.on('ss:again', this.again, this);
 
-    if (new URLSearchParams(location.search).get('debug') === '1') {
+    if (q.get('debug') === '1') {
       this.matter.world.createDebugGraphic();
       this.debugText = this.add
         .text(8, 8, '', { fontFamily: 'monospace', fontSize: '14px', color: PALETTE.uiText })
@@ -52,8 +90,13 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.scale.on(Phaser.Scale.Events.RESIZE, this.onResize, this);
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.scale.off(Phaser.Scale.Events.RESIZE, this.onResize, this));
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.scale.off(Phaser.Scale.Events.RESIZE, this.onResize, this);
+      this.game.events.off('ss:again', this.again, this);
+    });
   }
+
+  // ───────── yardımcılar ─────────
 
   private measure(): void {
     this.W = this.scale.width;
@@ -62,87 +105,363 @@ export class GameScene extends Phaser.Scene {
   }
 
   private onResize(): void {
+    const oldSea = this.seaY;
     this.measure();
     this.heli.setBounds(this.W, this.seaY);
-    this.cameras.main.setSize(this.W, this.H);
+    // Gemi geometrisi seaY'e bağlı: sadece sakin durumlarda yeniden kur.
+    if (Math.abs(oldSea - this.seaY) > 0.5 && (this.run.state === 'READY' || this.run.state === 'GAME_OVER')) {
+      const state = this.run.state;
+      this.resetWorld();
+      this.run.reset(state, this.startScore);
+    }
   }
 
-  /** Test kargosu: doğma bölgesinin ortası (gemi pruvasından sağ kenar payına kadar). */
+  private get collider(): Collider {
+    return this.matter.query as unknown as Collider;
+  }
+
+  private emit(text: string, kind: 'perfect' | 'steady' | 'ship'): void {
+    this.game.events.emit('ss:banner', { text, kind });
+  }
+
+  private stackBodies(): MatterJS.BodyType[] {
+    const out: MatterJS.BodyType[] = [this.ship.body];
+    for (const c of this.cargos) if ((c.state === 'SETTLING' || c.state === 'STACKED') && c.body) out.push(c.body);
+    return out;
+  }
+
+  /** Kargonun gemi çerçevesine göreli doğrusal (px/s) ve açısal (rad/s) hızı. */
+  private relMotion(b: MatterJS.BodyType): { speed: number; ang: number } {
+    const s = this.ship.body;
+    const w = s.angularVelocity;
+    const rx = b.position.x - s.position.x;
+    const ry = b.position.y - s.position.y;
+    const vx = s.velocity.x - w * ry;
+    const vy = s.velocity.y + w * rx;
+    return {
+      speed: Math.hypot(b.velocity.x - vx, b.velocity.y - vy) * 60,
+      ang: Math.abs(b.angularVelocity - w) * 60,
+    };
+  }
+
+  // ───────── dünya kurulumu / yeniden başlatma ─────────
+
+  private clearCargo(): void {
+    for (const c of this.cargos) c.destroy(this.matter);
+    this.cargos = [];
+    this.active = null;
+  }
+
+  /** Sahne yeniden başlamadan her şeyi temiz başlangıca döndürür (< 300 ms). */
+  private resetWorld(): void {
+    this.tweens.killAll();
+    this.clearCargo();
+    this.oldShip?.destroy();
+    this.oldShip = null;
+    this.ship.destroy();
+    this.measure();
+    const d = difficultyAt(this.startScore);
+    this.waveAmp = d.waveAmp;
+    this.ship = new Ship(this, this.T, this.seaY, d.rollAmpDeg);
+    this.heli.setBounds(this.W, this.seaY);
+    this.heli.reset();
+    this.rope.resetHook(this.heli.winchPoint());
+    this.spawner = new Spawner(createRng(Date.now() >>> 0), this.T);
+    this.failLeft = 0;
+    this.newBest = false;
+    this.stepper.reset();
+    const cam = this.cameras.main;
+    cam.resetFX();
+    cam.setZoom(1);
+    cam.centerOn(this.W / 2, this.H / 2);
+    this.spawnAt = this.simTime;
+  }
+
+  private again(): void {
+    if (this.run.state !== 'GAME_OVER') return;
+    this.resetWorld();
+    this.run.reset('PLAYING', this.startScore);
+  }
+
+  // ───────── sabit adım ─────────
+
+  private placedCount(): number {
+    return this.cargos.filter((c) => c.state === 'SETTLING' || c.state === 'STACKED').length;
+  }
+
   private spawnCargo(): void {
-    const x = (this.T.ship.bowTipX + this.W - this.T.heli.marginX) / 2;
-    this.cargo = new Cargo(this, this.T, 'crate', x);
-  }
-
-  /** Windan gelen yatay ivme (px/s²). Rüzgâr F4'te; şimdilik 0. */
-  private windAccel(): number {
-    return 0;
-  }
-
-  private applyWind(body: MatterJS.BodyType, accPxS2: number): void {
-    const v = body.velocity;
-    this.matter.body.setVelocity(body, { x: v.x + toStepAcc(accPxS2), y: v.y });
+    const pick = this.spawner.next(this.run.score, this.W);
+    const c = new Cargo(this, this.T, pick.type, pick.x);
+    this.cargos.push(c);
+    this.active = c;
   }
 
   private fixedStep(): void {
-    const wind = this.windAccel();
-    const carried = this.cargo?.state === 'CARRIED' ? this.cargo : null;
-    this.heli.step(carried ? carried.handling : 1, wind);
+    const run = this.run;
+    const d = difficultyAt(run.score);
+    this.waveAmp += Phaser.Math.Clamp(d.waveAmp - this.waveAmp, -WAVE_RATE / 60, WAVE_RATE / 60);
+    this.ship.step(d.rollAmpDeg, d.rollPeriod);
+
+    const carried = this.active?.state === 'CARRIED' ? this.active : null;
+    this.heli.step(carried ? carried.handling : 1, 0);
     this.rope.step(this.heli.winchPoint());
-    if (wind !== 0) {
-      this.applyWind(this.rope.endBody, wind);
-    }
+    if (carried?.body) carried.preSpeed = this.relMotion(carried.body).speed;
 
     this.matter.step(STEP_MS);
     this.simTime += STEP_MS / 1000;
 
-    const c = this.cargo;
-    if (!c) return;
-    if (c.state === 'FLOATING' && this.rope.hook) {
-      const top = c.topCenter();
-      const hp = this.rope.hook.position;
-      if (Math.hypot(hp.x - top.x, hp.y - top.y) < this.T.hook.pickupRadius) {
-        c.pickUp(this.matter, this.simTime);
-        this.rope.attach(c.body as MatterJS.BodyType, { x: 0, y: -c.h / 2 });
-      }
-    } else if (c.state === 'CARRIED') {
-      this.checkSplash(c);
-    }
+    if (run.state === 'READY' || run.state === 'PLAYING') this.trySpawn();
+    if (run.state !== 'PLAYING' && run.state !== 'SWAPPING') return;
+
+    this.handlePickup();
+    this.handleRelease();
+    this.handleSettling();
+    this.checkFailures();
+    this.checkSwap();
   }
 
-  /** F1 · SPLASH (CARRIED): kancalamadan carriedGrace sn sonra, ön dalga çizgisine göre. */
-  private checkSplash(c: Cargo): void {
-    const r = this.T.rules;
-    if (this.simTime - c.pickedAt < r.carriedGrace) return;
-    if (c.bottom() > waterY(c.centerX, this.simTime, this.seaY, this.waveAmp) + r.waterMargin) {
-      console.log('FAIL splash');
-      this.resetRun();
-    }
-  }
-
-  /** Geçici: başarısızlıkta kargoyu ve helikopteri başlangıca döndür. */
-  private resetRun(): void {
-    this.cargo?.destroy(this.matter);
-    this.heli.reset();
-    this.rope.resetHook(this.heli.winchPoint());
+  private trySpawn(): void {
+    if (this.active || this.simTime < this.spawnAt) return;
+    if (this.placedCount() >= this.run.quota) return;
     this.spawnCargo();
   }
 
+  private handlePickup(): void {
+    const c = this.active;
+    if (!c || c.state !== 'FLOATING' || !this.rope.hook || this.run.state !== 'PLAYING') return;
+    const top = c.topCenter();
+    const hp = this.rope.hook.position;
+    if (Math.hypot(hp.x - top.x, hp.y - top.y) < this.T.hook.pickupRadius) {
+      c.pickUp(this.matter, this.simTime);
+      this.rope.attach(c.body as MatterJS.BodyType, { x: 0, y: -c.h / 2 });
+    }
+  }
+
+  /** §7.2 otomatik bırakma + §7.4 yerleşim kalitesi. */
+  private handleRelease(): void {
+    const c = this.active;
+    if (!c || c.state !== 'CARRIED' || !c.body) return;
+    const r = this.T.rules;
+    const contact = this.collider.collides(c.body, this.stackBodies()).length > 0;
+    if (!contact) {
+      c.contactTime = 0;
+      c.touching = false;
+      if (this.simTime - c.lastContactAt > 0.5) c.impact = 0;
+      return;
+    }
+    if (!c.touching) c.impact = Math.max(c.impact, c.preSpeed);
+    c.touching = true;
+    c.lastContactAt = this.simTime;
+    const speed = this.relMotion(c.body).speed;
+    if (speed >= r.releaseMaxSpeed) {
+      c.contactTime = 0;
+      return;
+    }
+    c.contactTime += STEP_MS / 1000;
+    if (c.contactTime < r.releaseContactTime) return;
+
+    const pose = this.ship.pose();
+    const box = c.box();
+    const below = findBelow(
+      box,
+      this.cargos.filter((o) => o !== c && (o.state === 'SETTLING' || o.state === 'STACKED') && o.body).map((o) => o.box()),
+    );
+    c.placement = classifyPlacement({
+      cargo: box,
+      below,
+      slotCentersX: slotCentersWorld(pose, this.ship.params).map((p) => p.x),
+      deckAngle: pose.angle,
+      impact: c.impact,
+      rules: r,
+    });
+    c.state = 'SETTLING';
+    c.calmTime = 0;
+    c.contactTime = 0;
+    c.toShipLayer();
+    this.rope.detachToHook();
+    this.active = null;
+    this.spawnAt = this.simTime + r.nextSpawnDelay;
+  }
+
+  /** §7.3 oturma: kesintisiz settleTime boyunca sakin ve temasta → STACKED + puan. */
+  private handleSettling(): void {
+    const r = this.T.rules;
+    for (const c of this.cargos) {
+      if (c.state !== 'SETTLING' || !c.body) continue;
+      const touching = this.collider.collides(c.body, this.stackBodies()).length > 0;
+      const m = this.relMotion(c.body);
+      if (touching && m.speed < r.settleMaxSpeed && m.ang < r.settleMaxAngSpeed) c.calmTime += STEP_MS / 1000;
+      else c.calmTime = 0;
+      if (c.calmTime < r.settleTime) continue;
+
+      c.state = 'STACKED';
+      const pose = this.ship.pose();
+      const loc = worldToShip(pose, this.ship.params, c.body.position);
+      c.stackedLocal = { x: loc.x, y: loc.y, angle: c.body.angle - pose.angle };
+      const res = this.run.onStacked(c.points, c.placement?.perfect ?? false);
+      if (res.perfect) this.emit(STRINGS.perfect, 'perfect');
+      if (res.steady) this.emit(STRINGS.steady, 'steady');
+    }
+  }
+
+  /** §7.5 başarısızlıklar: F1 SPLASH, F2 CRASH, F3 TOPPLE. */
+  private checkFailures(): void {
+    const r = this.T.rules;
+    const t = this.simTime;
+    for (const c of this.cargos) {
+      if (!c.body) continue;
+      if (c.state === 'CARRIED') {
+        if (t - c.pickedAt >= r.carriedGrace && c.bottom() > waterY(c.centerX, t, this.seaY, this.waveAmp) + r.waterMargin) {
+          return this.triggerFail('splash', c.body.position);
+        }
+      } else if (c.state === 'SETTLING' || c.state === 'STACKED') {
+        if (c.bottom() > waterYMid(c.centerX, t, this.seaY, this.waveAmp) + r.waterMargin) {
+          return this.triggerFail('splash', c.body.position);
+        }
+      }
+    }
+
+    if (this.run.state === 'PLAYING') {
+      const hb = this.heli.hitbox();
+      const pose = this.ship.pose();
+      const params = this.ship.params;
+      const parts = shipParts(this.seaY, this.T.ship);
+      for (const rect of [parts.bridge, mastRect(this.seaY, this.T.ship)]) {
+        const a = rectWorldAabb(pose, params, rect);
+        if (hb.right > a.x0 && hb.x < a.x1 && hb.bottom > a.y0 && hb.y < a.y1) {
+          return this.triggerFail('crash', { x: this.heli.x, y: this.heli.y });
+        }
+      }
+      for (const c of this.cargos) {
+        if ((c.state !== 'SETTLING' && c.state !== 'STACKED') || !c.body) continue;
+        const b = c.body.bounds;
+        if (hb.right > b.min.x && hb.x < b.max.x && hb.bottom > b.min.y && hb.y < b.max.y) {
+          return this.triggerFail('crash', { x: this.heli.x, y: this.heli.y });
+        }
+      }
+    }
+
+    const pose = this.ship.pose();
+    for (const c of this.cargos) {
+      if (c.state !== 'STACKED' || !c.body || !c.stackedLocal) continue;
+      const loc = worldToShip(pose, this.ship.params, c.body.position);
+      let da = c.body.angle - pose.angle - c.stackedLocal.angle;
+      da = Math.atan2(Math.sin(da), Math.cos(da));
+      if (
+        loc.y - c.stackedLocal.y > r.toppleDrop ||
+        Math.abs((da * 180) / Math.PI) > r.toppleAngleDeg
+      ) {
+        return this.triggerFail('topple', c.body.position);
+      }
+    }
+  }
+
+  private triggerFail(kind: FailKind, at: { x: number; y: number }): void {
+    if (this.run.state === 'FAILING') return;
+    this.run.fail(kind);
+    this.failLeft = this.T.fx.failSlowMoTime;
+    this.heli.pointerUp();
+    const cam = this.cameras.main;
+    const cx = this.W / 2 + (at.x - this.W / 2) * CAMERA_SHIFT;
+    const cy = this.H / 2 + (at.y - this.H / 2) * CAMERA_SHIFT;
+    cam.pan(cx, cy, CAMERA_FX_MS, 'Sine.easeInOut');
+    cam.zoomTo(CAMERA_ZOOM, CAMERA_FX_MS, 'Sine.easeInOut');
+    cam.shake(250, this.T.fx.shakeFail / this.W);
+  }
+
+  // ───────── gemi değişimi (§7.6) ─────────
+
+  private checkSwap(): void {
+    if (this.run.state !== 'PLAYING' || !this.run.shipFull) return;
+    if (this.cargos.some((c) => c.state === 'SETTLING' || c.state === 'FLOATING' || c.state === 'CARRIED')) return;
+    const bonus = this.run.beginSwap();
+    this.emit(fmt(`${STRINGS.shipFull} +{n}`, { n: bonus }), 'ship');
+
+    const s = this.T.ship;
+    const old = this.ship;
+    const pose = old.pose();
+    for (const c of this.cargos) {
+      if (!c.body) continue;
+      const loc = worldToShip(pose, old.params, c.body.position);
+      const pv = { x: old.params.ship.pivotX, y: this.seaY - s.pivotAboveSea };
+      c.makeDecor(this.matter, old.container, { x: loc.x - pv.x, y: loc.y - pv.y }, c.body.angle - pose.angle);
+    }
+    this.cargos = [];
+    old.removeBody();
+    this.oldShip = old;
+
+    this.tweens.add({
+      targets: old,
+      offsetX: OLD_SHIP_EXIT_X,
+      duration: s.swapExitTime * 1000,
+      ease: 'Quad.easeIn',
+      onComplete: () => {
+        old.destroy();
+        this.oldShip = null;
+        const d = difficultyAt(this.run.score);
+        const next = new Ship(this, this.T, this.seaY, d.rollAmpDeg);
+        next.offsetX = OLD_SHIP_EXIT_X;
+        this.ship = next;
+        this.tweens.add({
+          targets: next,
+          offsetX: 0,
+          duration: s.swapEnterTime * 1000,
+          ease: 'Quad.easeOut',
+          onComplete: () => {
+            this.run.endSwap();
+            this.spawner.resetShip();
+            this.spawnAt = this.simTime;
+          },
+        });
+      },
+    });
+  }
+
+  // ───────── çerçeve döngüsü ─────────
+
   update(_time: number, delta: number): void {
     this.measure();
-    const steps = this.stepper.advance(delta);
-    for (let i = 0; i < steps; i++) this.fixedStep();
+    const run = this.run;
+    let steps = 0;
+    if (run.state !== 'GAME_OVER' && run.state !== 'PAUSED') {
+      const scale = run.state === 'FAILING' ? this.T.fx.failSlowMo : 1;
+      steps = this.stepper.advance(delta * scale);
+      for (let i = 0; i < steps; i++) this.fixedStep();
+    }
+
+    if (run.state === 'FAILING') {
+      this.failLeft -= delta / 1000;
+      if (this.failLeft <= 0) this.finishFail();
+    }
 
     this.sea.draw(this.simTime, this.seaY, this.waveAmp, this.W, this.H);
-    this.cargo?.updateFloating(this.simTime, this.seaY, this.waveAmp);
-    this.cargo?.sync();
+    this.ship.render();
+    this.oldShip?.render();
+    for (const c of this.cargos) {
+      c.updateFloating(this.simTime, this.seaY, this.waveAmp);
+      c.sync();
+    }
     this.heli.render();
     this.rope.draw();
 
     if (this.debugText) {
       this.debugText.setText(
-        `FPS ${this.game.loop.actualFps.toFixed(0)}  steps ${steps}\n` +
-          `state ${this.cargo?.state ?? '-'}  heli ${this.heli.x.toFixed(0)},${this.heli.y.toFixed(0)} v ${this.heli.vx.toFixed(0)},${this.heli.vy.toFixed(0)}`,
+        `FPS ${this.game.loop.actualFps.toFixed(0)}  steps ${steps}  ${run.state}\n` +
+          `score ${run.score}  ship ${run.shipIndex + 1}  ${run.stacked}/${run.quota}  streak ${run.streak}\n` +
+          `cargo ${this.cargos.map((c) => c.state[0]).join('')}`,
       );
     }
+  }
+
+  private finishFail(): void {
+    const run = this.run;
+    run.gameOver();
+    this.best = getItem('ss.best');
+    this.newBest = run.score > this.best;
+    if (this.newBest) {
+      setItem('ss.best', run.score);
+      this.best = run.score;
+    }
+    this.game.events.emit('ss:gameover');
   }
 }
