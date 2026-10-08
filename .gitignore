@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.log
+.claude/settings.local.json
+android/app/build/
+android/.gradle/
+android/build/
+*.keystore
+*.jks

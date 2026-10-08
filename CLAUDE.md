@@ -24,7 +24,7 @@ Tek parmakla oynanan fizik arcade oyunu. Phaser 4 + TypeScript + Vite + Capacito
 - Saf mantığı (`placement`, `pacing`, `difficulty`, `share`, `unlocks`, `daily`, `rng`) vitest ile test et.
 
 ## Bitirirken
-- `git add -A && git commit -m "faz N: <kısa özet>"` (push yapma).
+- `git add -A && git commit -m "faz N: <kısa özet>"` Push sadece kullanıcı isterse.
 - Rapor en fazla 5 satır: ne yapıldı, DECISIONS'a ne eklendi, bilinen sorun. Uzun açıklama yazma.
 
 ## Compact talimatı
