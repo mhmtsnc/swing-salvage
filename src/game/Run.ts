@@ -1,6 +1,6 @@
 import type { Tuning } from '../config/tuning';
 
-export type RunState = 'READY' | 'PLAYING' | 'SWAPPING' | 'FAILING' | 'GAME_OVER' | 'PAUSED';
+export type RunState = 'READY' | 'PLAYING' | 'SWAPPING' | 'FAILING' | 'GAME_OVER' | 'PAUSED' | 'RESUMING';
 export type FailKind = 'splash' | 'crash' | 'topple';
 export type RunMode = 'normal' | 'daily';
 
@@ -26,6 +26,7 @@ export class Run {
   perfects = 0;
   failKind: FailKind | null = null;
   mode: RunMode = 'normal';
+  secondChanceUsed = false;
   /** Teslim edilen her kargo: 'c' sıradan, 'p' PERFECT (paylaşım satırı) */
   log: ('c' | 'p')[] = [];
   /** PAUSED öncesi durum */
@@ -43,6 +44,7 @@ export class Run {
     this.perfects = 0;
     this.failKind = null;
     this.log = [];
+    this.secondChanceUsed = false;
   }
 
   get quota(): number {

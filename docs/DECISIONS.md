@@ -53,3 +53,10 @@ F7 · "So close" · 0 < rekor−skor ≤ max(3, %10 rekor) ve skor > 0 · GDD sa
 F7 · Debug koşusu · `?score=N` ile başlayan koşular depolamayı (stats, rekor, daily) güncellemez · test koşuları kayıtları bozmasın
 F7 · Seri ve PAPER/GOLD · Opsiyoneller uygulandı (daily seri sayacı, 5 gün PAPER, platin GOLD) · bütçe uyarısı yok
 F7 · Paylaşım satırı · Gemi sayısı = ulaşılan gemi numarası (shipIndex+1), tekil "1 ship" · §15.3 örneği "3 ships"
+F8 · Android SDK · Bu ortamda yok; `npm run android:debug` çalıştırılmadı, `android:sync` hatasız · RELEASE.md §1.2'de anlatıldı
+F8 · Reklam hatası · AdMob başlatma/yükleme/gösterme hataları yutulur, hizmet Noop gibi davranır, oyun asla kilitlenmez; gösterim 60 sn'de zaman aşımına düşer · "oyunu asla kilitleme"
+F8 · AGAIN ve reklam · Geçiş reklamı beklenirken `busy` bayrağı çifte dokunmayı engeller; panel durum değişince kapanır · hızlı çift dokunmada iki koşu başlamasın
+F8 · SECOND CHANCE sayımı · Devam eden koşuda koşu/kargo/perfect/madalya istatistiği iki kez sayılmaz (`already`) · çifte sayım olmasın
+F8 · RESUMING · Yeni durum; 1 sn'de timeScale 0,3→1, başarısızlık kontrolü kapalı, sonra STACKED referansları yenilenir · §16.2
+F8 · SECOND CHANCE sonrası · Suçlu kargo (CRASH'te yok), TOPPLE'da toppleDrop'tan fazla kayan istif kargoları ve taşınan kargo kaldırılır; yeni kargo nextSpawnDelay sonra doğar · §16.2 adım 1–3
+F8 · Splash/ikon · assets/ PNG'leri `make-icons.mjs` ile üretilir ve `@capacitor/assets` ile android res'e dağıtıldı; splash'ta ön plan zeminin %30'u · §17.6

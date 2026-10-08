@@ -6,6 +6,8 @@ import type { DailyState, Stats } from './storage';
 
 export type MedalTier = 'bronze' | 'silver' | 'gold' | 'platinum';
 
+const RANK: Record<MedalTier, number> = { bronze: 1, silver: 2, gold: 3, platinum: 4 };
+
 export function medalFor(score: number, medals: Record<MedalTier, number> = TUNING.medals): MedalTier | null {
   if (score >= medals.platinum) return 'platinum';
   if (score >= medals.gold) return 'gold';
@@ -32,6 +34,8 @@ export interface SummaryInput {
   daily: DailyState;
   /** Daha önce kayıtlı açık boyalar */
   prevUnlocks: readonly string[];
+  /** SECOND CHANCE ile devam eden koşuda önceden sayılanlar (çifte sayımı önler) */
+  already?: { runCounted: boolean; medal: MedalTier | null };
 }
 
 export interface Summary {
@@ -50,13 +54,13 @@ export function summarizeRun(i: SummaryInput): Summary {
   const medal = medalFor(r.score);
   const firstMedal = !!medal && i.stats.medals[medal] === 0;
   const stats: Stats = {
-    runs: i.stats.runs + 1,
+    runs: i.stats.runs + (i.already?.runCounted ? 0 : 1),
     cratesLifetime: i.stats.cratesLifetime + r.delivered,
     perfectsLifetime: i.stats.perfectsLifetime + r.perfects,
     bestShip: Math.max(i.stats.bestShip, r.shipsReached),
     medals: { ...i.stats.medals },
   };
-  if (medal) stats.medals[medal]++;
+  if (medal && (!i.already?.medal || RANK[medal] > RANK[i.already.medal])) stats.medals[medal]++;
 
   const unlocked = evaluateUnlocks(stats, i.daily);
   const newPaints = unlocked.filter((id) => !i.prevUnlocks.includes(id) && id !== 'rescue');

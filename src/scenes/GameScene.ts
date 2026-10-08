@@ -24,6 +24,8 @@ import { WeatherFx } from '../game/WeatherFx';
 import { Fx } from '../game/Fx';
 import { Feedback } from '../game/Feedback';
 import { loops } from '../core/audio';
+import { ads } from '../core/ads';
+import type { MedalTier } from '../core/summary';
 import { classifyPlacement, findBelow } from '../game/placement';
 import { mastRect, rectWorldAabb, shipParts, slotCentersWorld, worldToShip } from '../game/shipModel';
 
@@ -34,6 +36,8 @@ const WAVE_RATE = 3; // px/sn: dalga genliği zorlukla yumuşak değişir
 const CAMERA_SHIFT = 0.35;
 const CAMERA_ZOOM = 1.06;
 const CAMERA_FX_MS = 400;
+const RESUME_SECONDS = 1.0;
+const SAFE_HEIGHT = 420;
 
 export class GameScene extends Phaser.Scene {
   run!: Run;
@@ -43,6 +47,15 @@ export class GameScene extends Phaser.Scene {
   mode: RunMode = 'normal';
   summary: Summary | null = null;
   private attemptConsumed = false;
+  private culprit: Cargo | null = null;
+  private busy = false;
+  private runStartMs = 0;
+  private lastRunSec = 0;
+  private rewardedThisGameOver = false;
+  private resumeT = 0;
+  private counted: { delivered: number; perfects: number; runCounted: boolean; medal: MedalTier | null } = {
+    delivered: 0, perfects: 0, runCounted: false, medal: null,
+  };
   private lastShare: ShareInput | null = null;
   private T!: Tuning;
   private stepper = new FixedStepper();
@@ -106,10 +119,11 @@ export class GameScene extends Phaser.Scene {
       if (this.blockedByUi(p.x, p.y)) return;
       if (s === 'READY') {
         this.run.start();
+        this.runStartMs = performance.now();
         this.consumeAttempt();
         this.game.events.emit('ss:started');
       }
-      if (s === 'READY' || s === 'PLAYING' || s === 'SWAPPING') this.heli.pointerDown(p.x, p.y);
+      if (s === 'READY' || s === 'PLAYING' || s === 'SWAPPING' || s === 'RESUMING') this.heli.pointerDown(p.x, p.y);
     });
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
       if (!p.isDown) return;
@@ -124,6 +138,8 @@ export class GameScene extends Phaser.Scene {
     this.game.events.on('ss:paint', this.onPaint, this);
     this.game.events.on('ss:daily', this.armDaily, this);
     this.game.events.on('ss:share', this.shareRun, this);
+    this.game.events.on('ss:secondChance', this.secondChance, this);
+    this.game.events.on('ss:privacyOptions', this.privacyOptions, this);
     document.addEventListener('visibilitychange', this.onVisibility);
 
     if (q.get('debug') === '1') {
@@ -143,6 +159,8 @@ export class GameScene extends Phaser.Scene {
       this.game.events.off('ss:paint', this.onPaint, this);
       this.game.events.off('ss:daily', this.armDaily, this);
       this.game.events.off('ss:share', this.shareRun, this);
+      this.game.events.off('ss:secondChance', this.secondChance, this);
+      this.game.events.off('ss:privacyOptions', this.privacyOptions, this);
       document.removeEventListener('visibilitychange', this.onVisibility);
     });
   }
@@ -297,6 +315,9 @@ export class GameScene extends Phaser.Scene {
     this.newBest = false;
     this.summary = null;
     this.attemptConsumed = false;
+    this.culprit = null;
+    this.counted = { delivered: 0, perfects: 0, runCounted: false, medal: null };
+    this.rewardedThisGameOver = false;
     this.stepper.reset();
     const cam = this.cameras.main;
     cam.resetFX();
@@ -305,11 +326,22 @@ export class GameScene extends Phaser.Scene {
     this.spawnAt = this.simTime;
   }
 
-  private again(): void {
+  private async again(): Promise<void> {
+    if (this.run.state !== 'GAME_OVER' || this.busy) return;
+    this.busy = true;
+    try {
+      if (this.persist) {
+        await ads.maybeShowInterstitial({ lastRunSec: this.lastRunSec, rewardedWatched: this.rewardedThisGameOver });
+      }
+    } catch {
+      /* reklam hatası oyunu kilitlemez */
+    }
+    this.busy = false;
     if (this.run.state !== 'GAME_OVER') return;
     if (this.mode === 'daily' && this.triesLeftNow() <= 0) this.mode = 'normal';
     this.resetWorld();
     this.startRun('PLAYING');
+    this.runStartMs = performance.now();
     this.consumeAttempt();
   }
 
@@ -377,8 +409,8 @@ export class GameScene extends Phaser.Scene {
     this.waveAmp += Phaser.Math.Clamp(d.waveAmp - this.waveAmp, -WAVE_RATE / 60, WAVE_RATE / 60);
     this.ship.step(d.rollAmpDeg, d.rollPeriod);
 
-    const live = run.state === 'PLAYING' || run.state === 'SWAPPING' || run.state === 'FAILING';
-    if (live) this.weather.step(STEP_MS / 1000, d, run.score, run.state === 'SWAPPING');
+    const live = run.state === 'PLAYING' || run.state === 'SWAPPING' || run.state === 'FAILING' || run.state === 'RESUMING';
+    if (live) this.weather.step(STEP_MS / 1000, d, run.score, run.state === 'SWAPPING' || run.state === 'RESUMING');
     const base = live ? this.weather.baseAccel(d) : 0;
     const gust = live ? this.weather.gustAccel() : 0;
 
@@ -562,6 +594,7 @@ export class GameScene extends Phaser.Scene {
   private triggerFail(kind: FailKind, at: { x: number; y: number }, culprit: Cargo | null): void {
     if (this.run.state === 'FAILING') return;
     this.run.fail(kind);
+    this.culprit = culprit;
     this.fb.fail(kind, at.x, kind === 'splash' ? this.seaY : at.y, culprit, this.heli.images());
     this.failLeft = this.T.fx.failSlowMoTime;
     this.heli.pointerUp();
@@ -629,8 +662,14 @@ export class GameScene extends Phaser.Scene {
     this.measure();
     const run = this.run;
     let steps = 0;
+    if (run.state === 'RESUMING') {
+      this.resumeT += delta / 1000;
+      if (this.resumeT >= RESUME_SECONDS) this.endResume();
+    }
     if (run.state !== 'GAME_OVER' && run.state !== 'PAUSED') {
-      const scale = run.state === 'FAILING' ? this.T.fx.failSlowMo : 1;
+      const slow = this.T.fx.failSlowMo;
+      const scale =
+        run.state === 'FAILING' ? slow : run.state === 'RESUMING' ? slow + (1 - slow) * Math.min(1, this.resumeT / RESUME_SECONDS) : 1;
       steps = this.stepper.advance(delta * scale);
       for (let i = 0; i < steps; i++) this.fixedStep();
     }
@@ -676,11 +715,14 @@ export class GameScene extends Phaser.Scene {
     let daily = getItem('ss.daily');
     if (run.mode === 'daily') daily = finishAttempt(daily, today, run.score);
     const prevBest = getItem('ss.best');
+    this.lastRunSec = this.runStartMs ? (performance.now() - this.runStartMs) / 1000 : 0;
+    this.rewardedThisGameOver = false;
     const sum = summarizeRun({
+      already: { runCounted: this.counted.runCounted, medal: this.counted.medal },
       result: {
         score: run.score,
-        delivered: run.delivered,
-        perfects: run.perfects,
+        delivered: run.delivered - this.counted.delivered,
+        perfects: run.perfects - this.counted.perfects,
         shipsReached: run.shipIndex + 1,
         mode: run.mode,
       },
@@ -694,9 +736,11 @@ export class GameScene extends Phaser.Scene {
       setItem('ss.stats', sum.stats);
       setItem('ss.unlocks', sum.unlocked);
       if (sum.newBest) setItem('ss.best', run.score);
+      if (!this.counted.runCounted) ads.noteRunFinished();
     }
+    this.counted = { delivered: run.delivered, perfects: run.perfects, runCounted: true, medal: sum.medal ?? this.counted.medal };
     this.summary = sum;
-    this.newBest = sum.newBest;
+    this.newBest = sum.newBest || (this.newBest && run.mode === 'normal');
     this.best = Math.max(prevBest, sum.newBest ? run.score : 0);
     this.lastShare = {
       mode: run.mode,
@@ -709,6 +753,89 @@ export class GameScene extends Phaser.Scene {
       storeUrl: STORE_URL,
     };
     this.game.events.emit('ss:gameover');
+  }
+
+  // ───────── SECOND CHANCE (§16.2) ─────────
+
+  canSecondChance(): boolean {
+    return (
+      this.run.state === 'GAME_OVER' &&
+      !this.busy &&
+      !this.run.secondChanceUsed &&
+      this.run.score >= this.T.ads.secondChanceMinScore &&
+      ads.canOfferRewarded()
+    );
+  }
+
+  private async privacyOptions(): Promise<void> {
+    await ads.showPrivacyOptions();
+  }
+
+  private async secondChance(): Promise<void> {
+    if (!this.canSecondChance()) return;
+    this.busy = true;
+    let ok = false;
+    try {
+      ok = await ads.showRewarded();
+    } catch {
+      ok = false;
+    }
+    this.busy = false;
+    if (!ok || this.run.state !== 'GAME_OVER') return; // ödülsüz kapanış: panel olduğu gibi kalır
+    this.rewardedThisGameOver = true;
+    this.beginResume();
+  }
+
+  private removeCargo(c: Cargo): void {
+    if (c === this.active) {
+      this.rope.detachToHook();
+      this.active = null;
+    }
+    if (c.state === 'STACKED') this.run.stacked = Math.max(0, this.run.stacked - 1);
+    c.destroy(this.matter);
+    this.cargos = this.cargos.filter((o) => o !== c);
+  }
+
+  private beginResume(): void {
+    const run = this.run;
+    run.secondChanceUsed = true;
+    run.state = 'RESUMING';
+    const pose = this.ship.pose();
+    const drop = new Set<Cargo>();
+    if (this.culprit && run.failKind !== 'crash') drop.add(this.culprit);
+    if (run.failKind === 'topple') {
+      for (const c of this.cargos) {
+        if (c.state !== 'STACKED' || !c.body || !c.stackedLocal) continue;
+        const loc = worldToShip(pose, this.ship.params, c.body.position);
+        if (Math.hypot(loc.x - c.stackedLocal.x, loc.y - c.stackedLocal.y) > this.T.rules.toppleDrop) drop.add(c);
+      }
+    }
+    // taşınan kargo varsa o da kalkar (halat boş kancaya döner), yenisi doğar
+    if (this.active?.state === 'CARRIED') drop.add(this.active);
+    for (const c of drop) this.removeCargo(c);
+
+    this.heli.teleport((this.T.ship.bowTipX + this.W - this.T.heli.marginX) / 2, Math.max(this.T.heli.minY, this.seaY - SAFE_HEIGHT));
+    this.rope.resetHook(this.heli.winchPoint());
+    this.spawnAt = this.simTime + this.T.rules.nextSpawnDelay;
+    this.culprit = null;
+    this.resumeT = 0;
+    this.failLeft = 0;
+    const cam = this.cameras.main;
+    cam.resetFX();
+    cam.setZoom(1);
+    cam.centerOn(this.W / 2, this.H / 2);
+    this.stepper.reset();
+  }
+
+  /** Bağışıklık bitti: STACKED kargoların referans konumu/açısı yeniden alınır, koşu sürer. */
+  private endResume(): void {
+    const pose = this.ship.pose();
+    for (const c of this.cargos) {
+      if (c.state !== 'STACKED' || !c.body) continue;
+      const loc = worldToShip(pose, this.ship.params, c.body.position);
+      c.stackedLocal = { x: loc.x, y: loc.y, angle: c.body.angle - pose.angle };
+    }
+    this.run.state = 'PLAYING';
   }
 
   /** Game over panelinde gösterilen rekor (Daily'de günün en iyisi). */

@@ -3,6 +3,7 @@ import { makeAllTextures } from '../art/textures';
 import { getTuning } from '../config/tuning';
 import { initAudio, refreshAudioSettings } from '../core/audio';
 import { refreshHapticSettings } from '../core/haptics';
+import { ads } from '../core/ads';
 import '@fontsource/fredoka/500.css';
 import '@fontsource/fredoka/600.css';
 import '@fontsource/fredoka/700.css';
@@ -16,6 +17,7 @@ export class BootScene extends Phaser.Scene {
     const start = (): void => {
       makeAllTextures(this, getTuning());
       initAudio();
+      void ads.init();
       refreshHapticSettings();
       this.game.events.on('ss:settings', () => {
         refreshAudioSettings();

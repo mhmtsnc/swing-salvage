@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Swing Salvage</string>
+    <string name="title_activity_main">Swing Salvage</string>
+    <string name="package_name">com.swingsalvage.game</string>
+    <string name="custom_url_scheme">com.swingsalvage.game</string>
+    <!-- AdMob UYGULAMA kimliği. Şimdi Google TEST kimliği; yayından önce src/config/ads.ts ile birlikte gerçeğiyle değiştir (docs/RELEASE.md). -->
+    <string name="admob_app_id">ca-app-pub-3940256099942544~3347511713</string>
+</resources>

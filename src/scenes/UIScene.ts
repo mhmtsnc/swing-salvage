@@ -118,13 +118,11 @@ export class UIScene extends Phaser.Scene {
 
   private againTapped(): void {
     if (!this.over.isOpen || !this.over.unlocked) return;
-    this.over.hide();
     this.game.events.emit('ss:again');
   }
 
   private homeTapped(): void {
     if (!this.over.isOpen || !this.over.unlocked) return;
-    this.over.hide();
     this.game.events.emit('ss:home');
   }
 
@@ -148,7 +146,7 @@ export class UIScene extends Phaser.Scene {
       newBest: this.gs.newBest,
       medal: sum?.medal ?? null,
       message: sum?.message ?? fmt(STRINGS.delivered, { n: run.delivered }),
-      canSecondChance: false,
+      canSecondChance: this.gs.canSecondChance(),
       daily: daily ? { triesText: fmt(STRINGS.triesLeft, { n: left }) } : null,
       playNormal: daily && left <= 0,
     };
@@ -186,7 +184,7 @@ export class UIScene extends Phaser.Scene {
     this.lastState = state;
 
     const showReady = ov === 'none' && state === 'READY';
-    const showHud = ov === 'none' && (state === 'PLAYING' || state === 'SWAPPING' || state === 'PAUSED' || state === 'FAILING' || state === 'GAME_OVER');
+    const showHud = ov === 'none' && (state === 'PLAYING' || state === 'SWAPPING' || state === 'PAUSED' || state === 'FAILING' || state === 'GAME_OVER' || state === 'RESUMING');
     this.ready.show(showReady);
     this.hud.show(showHud);
     this.pausePanel.show(ov === 'none' && state === 'PAUSED');

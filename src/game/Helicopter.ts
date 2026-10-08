@@ -59,6 +59,15 @@ export class Helicopter {
     this.fingerStart = null;
   }
 
+  /** Verilen noktaya ışınlar, hızı sıfırlar (SECOND CHANCE güvenli noktası). */
+  teleport(x: number, y: number): void {
+    this.x = this.targetX = x;
+    this.y = this.targetY = y;
+    this.vx = this.vy = 0;
+    this.tilt = 0;
+    this.fingerStart = null;
+  }
+
   /** Göreli sürükleme: parmak değdiği an kaydedilir, hedef farka göre kayar. */
   pointerDown(px: number, py: number): void {
     this.fingerStart = { x: px, y: py };
