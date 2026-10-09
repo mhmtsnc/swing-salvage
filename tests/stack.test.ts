@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import Matter from 'matter-js';
 import { TUNING } from '../src/config/tuning';
 import { STEP_MS, toStepAcc } from '../src/core/time';
-import { difficultyAt } from '../src/game/Difficulty';
+import { difficultyAt, difficultyEndless } from '../src/game/Difficulty';
 import {
   deckY, shipParts, shipPose, shipToWorld, worldToShip,
   type ShipParams,
@@ -108,6 +108,11 @@ const at = (score: number): Params => {
   return { rollAmpDeg: d.rollAmpDeg, rollPeriod: d.rollPeriod, gustForce: d.gustForce, gustInterval: d.gustInterval };
 };
 
+const endlessCap = (): Params => {
+  const d = difficultyEndless(500);
+  return { rollAmpDeg: d.rollAmpDeg, rollPeriod: d.rollPeriod, gustForce: d.gustForce, gustInterval: d.gustInterval };
+};
+
 describe('istif kabul testi (§6.4, başsız matter-js)', () => {
   it('(a) düzgün 2+2+1, skor 10: devrilme yok, kayma ≤ 10', () => {
     const r = run(proper, at(10), 30);
@@ -118,6 +123,11 @@ describe('istif kabul testi (§6.4, başsız matter-js)', () => {
     const r = run(proper, at(60), 30);
     expect(r.toppled).toBe(false);
     expect(r.maxSlip).toBeLessThanOrEqual(20);
+  });
+  it('(e) sonsuz zorluk tavanında düzgün istif hâlâ devrilmez (kayma ≤ 30)', () => {
+    const r = run(proper, endlessCap(), 30);
+    expect(r.toppled).toBe(false);
+    expect(r.maxSlip).toBeLessThanOrEqual(30);
   });
   const col = (shift: number) => [{ x: 210, row: 0 }, { x: 210, row: 1, shift }];
   it('(c) +30 px kaymış üst sandık, yalpasız: devrilmez', () => {

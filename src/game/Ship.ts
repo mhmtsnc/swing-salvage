@@ -19,6 +19,9 @@ export class Ship {
   private phase = 0;
   private amp: number;
   private cfg: ShipParams;
+  private hotGfx: Phaser.GameObjects.Graphics;
+  /** "Nokta atışı" slotu (indeks) */
+  hotSlot = 0;
 
   constructor(private scene: Phaser.Scene, private t: Tuning, private seaY: number, startAmpDeg: number) {
     this.amp = startAmpDeg;
@@ -39,6 +42,28 @@ export class Ship {
     const pv = pivotRest(seaY, t.ship);
     this.container = scene.add.container(pv.x, pv.y).setDepth(7);
     this.container.add(this.makeImage(pv));
+    this.hotGfx = scene.add.graphics();
+    this.container.add(this.hotGfx);
+    scene.tweens.add({ targets: this.hotGfx, alpha: 0.45, duration: 600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    this.setHotSlot(0);
+  }
+
+  /** Hassas teslimat bölgesi: altın köşeli slot. Slot merkezinde ± sweetSpotMaxDx içinde bırakmak bonus verir. */
+  setHotSlot(i: number): void {
+    this.hotSlot = i;
+    const g = this.hotGfx;
+    g.clear();
+    const pv = pivotRest(this.seaY, this.t.ship);
+    const dy = deckY(this.seaY, this.t.ship);
+    const cx = this.t.ship.slotCentersX[i] - pv.x;
+    const half = this.t.rules.sweetSpotMaxDx;
+    const y0 = dy - pv.y;
+    g.fillStyle(0xf3c44e, 0.35).fillRect(cx - half, y0 - 3, half * 2, 5);
+    g.lineStyle(3, 0xf3c44e, 1);
+    g.beginPath();
+    g.moveTo(cx - half, y0 - 14).lineTo(cx - half, y0 - 3).lineTo(cx - half + 8, y0 - 3);
+    g.moveTo(cx + half, y0 - 14).lineTo(cx + half, y0 - 3).lineTo(cx + half - 8, y0 - 3);
+    g.strokePath();
   }
 
   get params(): ShipParams {

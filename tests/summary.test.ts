@@ -14,14 +14,14 @@ const input = (over: Partial<SummaryInput> & { score?: number; delivered?: numbe
 });
 
 describe('medalFor', () => {
-  it('eşikler 10 / 25 / 45 / 70', () => {
-    expect([9, 10, 25, 45, 70].map((s) => medalFor(s))).toEqual([null, 'bronze', 'silver', 'gold', 'platinum']);
+  it('eşikler 20 / 60 / 120 / 200', () => {
+    expect([19, 20, 60, 120, 200].map((s) => medalFor(s))).toEqual([null, 'bronze', 'silver', 'gold', 'platinum']);
   });
 });
 
 describe('summarizeRun', () => {
   it('istatistikleri günceller', () => {
-    const s = summarizeRun(input({ score: 26, delivered: 9 }));
+    const s = summarizeRun(input({ score: 66, delivered: 9 }));
     expect(s.stats.runs).toBe(1);
     expect(s.stats.cratesLifetime).toBe(9);
     expect(s.stats.medals.silver).toBe(1);
@@ -29,18 +29,18 @@ describe('summarizeRun', () => {
   });
   it('mesaj önceliği 1: yeni boya, madalyadan önce', () => {
     const st = { ...stats0(), cratesLifetime: 25 };
-    const s = summarizeRun(input({ stats: st, score: 12, delivered: 6 }));
+    const s = summarizeRun(input({ stats: st, score: 22, delivered: 6 }));
     expect(s.newPaints).toEqual(['sunny']);
     expect(s.message).toBe('New paint unlocked: SUNNY!');
   });
   it('mesaj önceliği 2: ilk madalya', () => {
-    const s = summarizeRun(input({ score: 12, delivered: 4 }));
+    const s = summarizeRun(input({ score: 22, delivered: 4 }));
     expect(s.firstMedal).toBe(true);
     expect(s.message).toBe('First BRONZE medal!');
   });
   it('ikinci kez aynı madalya "first" değil', () => {
     const st = { ...stats0(), medals: { bronze: 1, silver: 0, gold: 0, platinum: 0 } };
-    expect(summarizeRun(input({ stats: st, score: 12 })).firstMedal).toBe(false);
+    expect(summarizeRun(input({ stats: st, score: 22 })).firstMedal).toBe(false);
   });
   it('mesaj önceliği 3: kıl payı', () => {
     const st = { ...stats0(), medals: { bronze: 1, silver: 0, gold: 0, platinum: 0 } };
@@ -60,7 +60,7 @@ describe('summarizeRun', () => {
     expect(summarizeRun(daily).newBest).toBe(false);
   });
   it('platin madalya GOLD boyayı açar', () => {
-    const s = summarizeRun(input({ score: 70, delivered: 30 }));
+    const s = summarizeRun(input({ score: 210, delivered: 30 }));
     expect(s.newPaints).toContain('gold');
   });
 });

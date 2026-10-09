@@ -4,31 +4,54 @@ import { createRng } from '../src/core/rng';
 import { Run } from '../src/game/Run';
 import { Spawner } from '../src/game/Spawner';
 
+import { scorePlacement, type ScoreInput } from '../src/game/scoring';
+
+const none = { closeCall: false, gustHook: false, gustLanding: false, saved: false };
+const place = (run: Run, o: Partial<ScoreInput> = {}) => {
+  const grade = o.grade ?? 'normal';
+  const r = scorePlacement({
+    base: 1, grade, swingDeg: 0, hard: false, sweet: false, risk: none, carrySec: 20,
+    perfectStreakBefore: run.streak, cleanStreakBefore: run.cleanStreak, progress: run.progress, ...o,
+  }, TUNING.scoring);
+  run.commit(r, grade);
+  return r;
+};
+
 describe('Run puanlama', () => {
   it('normal yerleştirme tip puanı verir, seriyi sıfırlar', () => {
     const r = new Run(TUNING);
     r.reset('PLAYING');
-    r.onStacked(1, true);
-    const x = r.onStacked(2, false);
+    place(r, { grade: 'perfect' });
+    const x = place(r, { base: 2 });
     expect(x.gained).toBe(2);
     expect(r.streak).toBe(0);
-    expect(r.score).toBe(1 + 1 + 2);
+    expect(r.score).toBe(2 + 2);
   });
-  it('PERFECT +1, her 5. ardışık PERFECT +3 STEADY', () => {
+  it('ilerleme eski ölçekli: temel + perfect için +1', () => {
     const r = new Run(TUNING);
     r.reset('PLAYING');
-    const gains = [1, 2, 3, 4, 5].map(() => r.onStacked(1, true));
-    expect(gains.map((g) => g.gained)).toEqual([2, 2, 2, 2, 5]);
-    expect(gains[4].steady).toBe(true);
+    place(r, { grade: 'flawless', base: 2 });
+    expect(r.progress).toBe(3);
+    expect(r.score).toBe(6);
+    expect(r.perfects).toBe(1);
+    expect(r.log).toEqual(['p']);
+  });
+  it('ardışık perfect serisi sayaçları ilerletir', () => {
+    const r = new Run(TUNING);
+    r.reset('PLAYING');
+    for (let i = 0; i < 5; i++) place(r, { grade: 'perfect' });
+    expect(r.streak).toBe(5);
+    expect(r.cleanStreak).toBe(5);
     expect(r.perfects).toBe(5);
   });
-  it('kota 5,6,7 sonra hep 7; gemi bonusu +2', () => {
+  it('kota 5,6,7 sonra hep 7; gemi bonusu +2 (skor ve ilerleme)', () => {
     const r = new Run(TUNING);
     r.reset('PLAYING');
     const q: number[] = [];
     for (let i = 0; i < 5; i++) { q.push(r.quota); r.beginSwap(); r.endSwap(); }
     expect(q).toEqual([5, 6, 7, 7, 7]);
     expect(r.score).toBe(10);
+    expect(r.progress).toBe(10);
   });
   it('fail ikinci kez durumu değiştirmez', () => {
     const r = new Run(TUNING);
@@ -46,6 +69,8 @@ describe('Spawner', () => {
     for (let i = 0; i < 50; i++) {
       const p = s.next(0, 540);
       expect(p.type).toBe('crate');
+      expect(p.weightMul).toBeGreaterThanOrEqual(0.85);
+      expect(p.weightMul).toBeLessThanOrEqual(1.25);
       expect(p.x).toBeGreaterThanOrEqual(310 + 20 + 36);
       expect(p.x).toBeLessThanOrEqual(540 - 20 - 36);
     }

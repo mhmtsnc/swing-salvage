@@ -29,8 +29,20 @@ export class Cargo {
   calmTime = 0;
   /** STACKED olduğu andaki gemi-yerel konum/açı (TOPPLE ölçütü) */
   stackedLocal: { x: number; y: number; angle: number } | null = null;
+  /** Taşıma sırasında izlenen risk/ödül verileri (v1.1) */
+  swingPeak = 0;
+  closeT = 0;
+  closeCall = false;
+  gustHook = false;
+  gustLanding = false;
+  saved = false;
+  submergedT = 0;
+  carrySec = 0;
+  /** Sert iniş veya halat kopması gibi hasar */
+  damaged = false;
   readonly w: number;
   readonly h: number;
+  private weightLabel: Phaser.GameObjects.Text;
   private gfx: Phaser.GameObjects.Image;
   private x = 0;
   private y = 0;
@@ -42,6 +54,8 @@ export class Cargo {
     private t: Tuning,
     readonly type: CargoType,
     private baseX: number,
+    /** Bu kargonun yoğunluk çarpanı (koşuya göre değişen ağırlık) */
+    readonly weightMul = 1,
   ) {
     const def = t.cargo[type];
     this.w = def.w;
@@ -49,6 +63,19 @@ export class Cargo {
     this.phase = baseX * 0.05;
     this.x = baseX;
     this.gfx = scene.add.image(baseX, 0, `cargo_${type}`).setDepth(9);
+    this.weightLabel = scene.add
+      .text(baseX, 0, `${this.massKg()} kg`, { fontFamily: 'Fredoka', fontStyle: '600', fontSize: '12px', color: '#24353A' })
+      .setOrigin(0.5)
+      .setDepth(9.5)
+      .setAlpha(0.8);
+  }
+
+  /** Görünen ağırlık (kg): yoğunluk × alan × 10. */
+  massKg(): number {
+    const d = this.t.cargo[this.type];
+    const shape = (d as { shape?: string }).shape;
+    const area = shape === 'circle' ? Math.PI * (d.w / 2) ** 2 : shape === 'trapezoid' ? d.w * d.h * (1 - ((d as { slope?: number }).slope ?? 0) / 2) : d.w * d.h;
+    return Math.round(d.density * this.weightMul * area * 10);
   }
 
   get sprite(): Phaser.GameObjects.Image {
@@ -76,11 +103,13 @@ export class Cargo {
     if (this.body) matter.world.remove(this.body);
     this.body = null;
     container.add(this.gfx);
+    this.weightLabel.destroy();
     this.gfx.setPosition(local.x, local.y).setRotation(angle);
   }
 
+  /** Ağır kargo helikopteri daha çok yavaşlatır. */
   get handling(): number {
-    return this.t.cargo[this.type].handling;
+    return this.t.cargo[this.type].handling / Math.sqrt(this.weightMul);
   }
 
   /** Yüzen kargo fizik gövdesi değildir, dalgayla oynayan bir sprite'tır (§10.3). */
@@ -91,6 +120,7 @@ export class Cargo {
     this.angle = Phaser.Math.Clamp(0.4 * Math.atan(slope), -MAX_FLOAT_ANGLE, MAX_FLOAT_ANGLE);
     this.y = waterY(this.x, time, seaY, amp) - 0.1 * this.h;
     this.gfx.setPosition(this.x, this.y).setRotation(this.angle);
+    this.weightLabel.setPosition(this.x, this.y - this.h / 2 - 14);
   }
 
   /** Üst-orta nokta (dünya koordinatı). */
@@ -104,19 +134,30 @@ export class Cargo {
   pickUp(matter: Phaser.Physics.Matter.MatterPhysics, time: number): void {
     const def = this.t.cargo[this.type];
     const c = this.t.cargoCommon;
-    this.body = matter.add.rectangle(this.x, this.y, this.w, this.h, {
+    const opts = {
       angle: this.angle,
-      chamfer: { radius: def.chamfer },
-      density: def.density,
+      density: def.density * this.weightMul,
       friction: c.friction,
       frictionStatic: c.frictionStatic,
       restitution: c.restitution,
       frictionAir: c.frictionAir,
       slop: c.slop,
-    });
+    };
+    const shape = (def as { shape?: string }).shape;
+    if (shape === 'circle') {
+      this.body = matter.add.circle(this.x, this.y, this.w / 2, opts);
+    } else if (shape === 'trapezoid') {
+      this.body = matter.add.trapezoid(this.x, this.y, this.w, this.h, (def as { slope?: number }).slope ?? 0.4, {
+        ...opts,
+        chamfer: { radius: def.chamfer },
+      });
+    } else {
+      this.body = matter.add.rectangle(this.x, this.y, this.w, this.h, { ...opts, chamfer: { radius: def.chamfer } });
+    }
     this.state = 'CARRIED';
     this.pickedAt = time;
     this.gfx.setDepth(14);
+    this.weightLabel.setVisible(false);
   }
 
   /** Gövdenin en alt noktası (dünya y). */
@@ -137,5 +178,6 @@ export class Cargo {
     if (this.body) matter.world.remove(this.body);
     this.body = null;
     this.gfx.destroy();
+    this.weightLabel.destroy();
   }
 }

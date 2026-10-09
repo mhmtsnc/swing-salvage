@@ -15,6 +15,8 @@ export class Rope {
   private hookImg: Phaser.GameObjects.Image;
   private slings: Phaser.GameObjects.Graphics;
   private slingHalf = 0;
+  /** 0..1+: halat yükünün kopma sınırına oranı (renk uyarısı) */
+  private strain = 0;
   private reelFrom = 0;
   private reelT = 1;
   /** Taşınan gövde (yoksa kanca) ucundaki dünya noktası için yerel ofset */
@@ -57,6 +59,17 @@ export class Rope {
     const c = Math.cos(b.angle);
     const s = Math.sin(b.angle);
     return { x: b.position.x + p.x * c - p.y * s, y: b.position.y + p.x * s + p.y * c };
+  }
+
+  /** Halatın dikeyden sapma açısı (derece, mutlak). */
+  swingDeg(): number {
+    const e = this.endPoint();
+    const a = this.constraint.pointA;
+    return Math.abs((Math.atan2(e.x - a.x, e.y - a.y) * 180) / Math.PI);
+  }
+
+  setStrain(ratio: number): void {
+    this.strain = ratio;
   }
 
   private distance(): number {
@@ -125,7 +138,9 @@ export class Rope {
     const e = this.endPoint();
     const g = this.gfx;
     g.clear();
-    g.lineStyle(ROPE_WIDTH, hex(PALETTE.rope), 1);
+    const warn = Math.min(1, Math.max(0, (this.strain - 0.5) / 0.5));
+    const color = warn > 0 ? Phaser.Display.Color.Interpolate.ColorWithColor(Phaser.Display.Color.ValueToColor(hex(PALETTE.rope)), Phaser.Display.Color.ValueToColor(hex(PALETTE.uiRed)), 100, warn * 100) : null;
+    g.lineStyle(ROPE_WIDTH + warn * 1.6, color ? Phaser.Display.Color.GetColor(color.r, color.g, color.b) : hex(PALETTE.rope), 1);
     const cx = (a.x + e.x) / 2;
     const cy = (a.y + e.y) / 2 + SAG;
     g.beginPath();

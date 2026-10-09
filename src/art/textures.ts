@@ -198,6 +198,51 @@ function makeCargo(scene: Phaser.Scene, T: Tuning): void {
   };
   body('crate', crateLike(PALETTE.crate, PALETTE.crateLine));
   body('wide', crateLike(PALETTE.wide, PALETTE.wideLine));
+  body('tall', crateLike(PALETTE.tall, PALETTE.tallLine));
+  body('wedge', (ctx, w, h) => {
+    const top = w * (1 - 0.45) / 2; // slope 0,45: üst kenar daha dar
+    shadow(ctx, () => {
+      ctx.fillStyle = PALETTE.wedge;
+      ctx.beginPath();
+      ctx.moveTo(top, 0);
+      ctx.lineTo(w - top, 0);
+      ctx.lineTo(w, h);
+      ctx.lineTo(0, h);
+      ctx.closePath();
+      ctx.fill();
+    });
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.12)';
+    ctx.beginPath();
+    ctx.moveTo(w - top, 0);
+    ctx.lineTo(w, h);
+    ctx.lineTo(w - 8, h);
+    ctx.lineTo(w - top - 4, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    line(ctx, PALETTE.wedgeLine, 2.5, [[top + 4, h * 0.35], [w - top - 6, h * 0.35]]);
+    line(ctx, PALETTE.wedgeLine, 2.5, [[top - 8, h * 0.7], [w - top + 2, h * 0.7]]);
+  });
+  body('ball', (ctx, w, h) => {
+    const r = w / 2;
+    shadow(ctx, () => {
+      ctx.fillStyle = PALETTE.ball;
+      ctx.beginPath();
+      ctx.arc(r, h / 2, r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(r, h / 2, r, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.fillStyle = PALETTE.ballBand;
+    ctx.fillRect(0, h / 2 - 6, w, 12);
+    ctx.fillStyle = 'rgba(0,0,0,0.12)';
+    ctx.fillRect(w - 10, 0, 10, h);
+    ctx.restore();
+    line(ctx, '#FFFFFF', 2, [[12, 14], [18, 9]], 0.7);
+  });
   body('barrel', (ctx, w, h, r) => {
     shadow(ctx, () => {
       ctx.fillStyle = PALETTE.barrel;

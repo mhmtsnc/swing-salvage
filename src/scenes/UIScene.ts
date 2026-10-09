@@ -82,13 +82,14 @@ export class UIScene extends Phaser.Scene {
       ev.on(e, fn, this);
       this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => ev.off(e, fn, this));
     };
-    on('ss:placed', ((p: { x: number; y: number; gained: number; perfect: boolean; steady: boolean }) => {
+    on('ss:placed', ((p: { x: number; y: number; gained: number; labels: string[] }) => {
       this.onboarding.onPlaced();
-      const small = p.steady ? STRINGS.steady : p.perfect ? STRINGS.perfect : null;
-      this.hud.floatTag(p.x, p.y - 50, `+${p.gained}`, small);
+      this.hud.floatTag(p.x, p.y - 60, `+${p.gained}`, p.labels);
     }) as never);
+    on('ss:saved', (() => this.hud.floatTag(this.scale.width / 2, this.scale.height * 0.4, STRINGS.rewards.saved, [])) as never);
+    on('ss:snap', (() => this.hud.floatTag(this.scale.width / 2, this.scale.height * 0.4, STRINGS.rewards.snap, [])) as never);
     on('ss:shipFull', ((p: { bonus: number }) => {
-      this.hud.floatTag(this.scale.width / 2, this.scale.height * 0.32, `+${p.bonus}`, STRINGS.shipFull);
+      this.hud.floatTag(this.scale.width / 2, this.scale.height * 0.32, `+${p.bonus}`, [STRINGS.shipFull]);
     }) as never);
     on('ss:hooked', (() => this.onboarding.onHooked()) as never);
     on('ss:dragMove', (() => this.onboarding.onDragMove()) as never);
@@ -195,7 +196,12 @@ export class UIScene extends Phaser.Scene {
     const k = this.gs.triesLeftNow();
     this.ready.setDaily(true, this.gs.dailyNumber(), k);
     this.ready.update(W, H, this.gs.best, this.gs.modeTag());
-    this.hud.update(W, run, this.gs.best, this.gs.modeTag());
+    this.hud.update(W, run, this.gs.best, this.gs.modeTag(), {
+      combo: this.gs.comboMult,
+      storm: this.gs.stormMult,
+      ghostDiff: this.gs.ghostDiff(),
+      wind: this.gs.windIndicator(),
+    });
     this.pausePanel.layout(W, H);
     this.hangar.layout(W, H);
     this.settings.layout(W, H);

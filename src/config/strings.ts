@@ -45,6 +45,15 @@ export const STRINGS = {
   triesLeft: '{n} tries left today',
   dailyTag: 'DAILY #{n}',
   dailyBtn: '#{n} · {k} left',
+  rewards: {
+    flawless: 'FLAWLESS', perfect: 'PERFECT', chain: 'CHAIN', swing: 'SWING', closeCall: 'CLOSE CALL',
+    gustHook: 'STORM HOOK', gustLanding: 'GUSTY DROP', saved: 'SAVED!', speedy: 'SPEEDY', sweet: 'SWEET SPOT', clean: 'CLEAN',
+    snap: 'ROPE SNAP!',
+  },
+  combo: 'COMBO',
+  storm: 'STORM',
+  ghost: 'GHOST',
+  wind: 'WIND',
   medals: { bronze: 'BRONZE', silver: 'SILVER', gold: 'GOLD', platinum: 'PLATINUM' },
   paints: {
     rescue: 'RESCUE RED',

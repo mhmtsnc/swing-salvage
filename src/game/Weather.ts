@@ -28,6 +28,8 @@ export class Weather {
   private gustTimer = -1;
   private lightningTimer = -1;
   private thunderIn = -1;
+  private windT = 0;
+  private veerPhase = 0;
 
   constructor(private rng: Rng, private t: Tuning, private ev: WeatherEvents = {}) {
     this.newShip();
@@ -39,11 +41,24 @@ export class Weather {
 
   newShip(): void {
     this.baseDir = this.rng.next() < 0.5 ? -1 : 1;
+    this.veerPhase = this.rng.next() * Math.PI * 2;
+  }
+
+  /**
+   * Temel rüzgârın yönü ve oranı (−1..1). İlerleme `veerFromScore`'a varınca yön sinüsle değişir
+   * (geçişte `baseDir`'den yumuşak karışım), böylece rüzgâr zaman zaman sakinleşir ve yön çevirir.
+   */
+  windSign(score: number): number {
+    const w = this.t.weather;
+    const k = Math.min(1, Math.max(0, (score - w.veerFromScore) / 6));
+    if (k <= 0) return this.baseDir;
+    const veer = Math.cos((2 * Math.PI * this.windT) / w.veerPeriod + this.veerPhase);
+    return this.baseDir * (1 - k) + veer * k;
   }
 
   /** Temel rüzgâr ivmesi (px/s², işaretli). Kargo ve kanca bunu alır; helikopter windResponse katını. */
-  baseAccel(d: DifficultyParams): number {
-    return this.baseDir * d.windBase * this.t.weather.windAccelPerUnit;
+  baseAccel(d: DifficultyParams, score = 0): number {
+    return this.windSign(score) * d.windBase * this.t.weather.windAccelPerUnit;
   }
 
   /** Ani rüzgâr zarfı: gustRamp ile yumuşak giriş ve çıkış (0..1). */
@@ -72,6 +87,7 @@ export class Weather {
   /** `frozen`: gemi değişimi sırasında aralık sayacı durur (devam eden ani rüzgâr biter). */
   step(dt: number, d: DifficultyParams, score: number, frozen: boolean): void {
     const w = this.t.weather;
+    this.windT += dt;
 
     if (this.phase === 'IDLE') {
       if (score >= w.gustFromScore && !frozen) {

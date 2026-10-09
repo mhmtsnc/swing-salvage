@@ -33,7 +33,7 @@ describe('Weather', () => {
     const warns = log.filter((l) => l.e === 'warn');
     const starts = log.filter((l) => l.e === 'start');
     expect(warns.length).toBeGreaterThan(3);
-    warns.forEach((w, i) => expect(starts[i].t - w.t).toBeCloseTo(TUNING.weather.gustTelegraph, 1));
+    starts.forEach((st, i) => expect(st.t - warns[i].t).toBeCloseTo(TUNING.weather.gustTelegraph, 1));
   });
   it('bitiş başlangıçtan gustDuration sonra', () => {
     const { log } = simulate('b', 20, 60);
@@ -86,5 +86,24 @@ describe('Weather', () => {
     }
     expect(peak).toBe(1);
     expect(sawRamp).toBe(true);
+  });
+});
+
+describe('rüzgâr yönü değişimi', () => {
+  it('veerFromScore altında sabit yön, üstünde zamanla yön değiştirir', () => {
+    const w = new Weather(createRng('veer'), TUNING);
+    const d = difficultyAt(20);
+    const low = new Set<number>();
+    const high: number[] = [];
+    for (let i = 0; i < 60 * 60; i++) {
+      w.step(1 / 60, d, 5, true);
+      low.add(Math.sign(w.windSign(5)));
+      w.step(0, d, 30, true);
+      high.push(w.windSign(30));
+    }
+    expect(low.size).toBe(1);
+    expect(Math.min(...high)).toBeLessThan(-0.5);
+    expect(Math.max(...high)).toBeGreaterThan(0.5);
+    expect(Math.abs(w.baseAccel(d, 30))).toBeLessThanOrEqual(d.windBase * TUNING.weather.windAccelPerUnit + 1e-9);
   });
 });

@@ -64,3 +64,20 @@ F9 · §19 kontrolü · 1) açılış/60 Hz sabit adım: FixedStepper+testler; 2
 F9 · Uç durum · Gemi değişimi tween'i yalnızca SWAPPING iken koşuyu ilerletir (duraklatma/başarısızlıkla çakışma) · SWAPPING'de kargo olmadığı için başarısızlık zaten oluşmaz, ek güvence
 F9 · Uç durum · Çift dokunma: AGAIN `busy` bayrağı + durum kontrolü; yavaş çekim bitmeden panel yok · P4
 F9 · Uç durum · localStorage yoksa `storage.ts` belleğe düşer, `tuning.ts` try/catch · §17.3
+V1.1 · Kapsam · Kullanıcı isteğiyle 20 fikir eklendi (GDD'nin üstüne); tüm sayılar `tuning.ts`'de (`scoring`, `ropeLoad`, `ghost`, `endless`, `rules` ek alanları) · GDD §18 ile çelişen yok (para/yükseltme yok)
+V1.1 · Skor/ilerleme ayrımı · `run.score` çarpanlı gerçek skor, `run.progress` eski ölçekli puan (temel + perfect için +1 + gemi bonusu) ve zorluk/kargo havuzu/fırtına çarpanı buna bağlı · çarpanlar zorluğu hızlandırmasın
+V1.1 · Puan formülü · round((temel + salınım + risk + hız + nokta atışı) × yerleştirme(1/2/3) × seri(1+0,1/ardışık, en çok +0,9) × fırtına(1+ilerleme/120, en çok 2,5)) + seri ve hasarsız kilometre taşları · `scoring.ts`, testli
+V1.1 · Derece · FLAWLESS = PERFECT + dx≤3 + açı≤1,5° + çarpma≤90 (×3), PERFECT ×2; paylaşım satırında ikisi de ⭐ · §7.4 üstüne
+V1.1 · Salınım bonusu · Halat dikeyden sapmasının son ~0,5 sn'deki zirvesi: ≥15°/25°/35° → +1/+2/+3, sert inişte yok · "salınımı avantaja çevir": sarkaçın dönüş noktasında yumuşak inmek
+V1.1 · Risk bonusları · Kıl payı (su üstünde <14 px ≥0,45 sn) +1, fırtınada kancalama +1, ani rüzgârda bırakma +2, kurtarma +3 · adil ve ölçülebilir riskler
+V1.1 · Son anda kurtarma · Taşınan kargo rescueGrace=0,35 sn batabilir; çekilirse kurtulur (SAVED +3), batıkken hız %8 sönümlenir · §7.5 F1'e istisna
+V1.1 · Halat yükü · Gövde ivmesinden |a−g|/g (0,1 sn yumuşatma); sınır 4,6 g (ağır kargoda biraz düşük), 0,15 sn aşılırsa halat kopar ve kargo serbest/sert iniş sayılır; 0,6 üstünde renk ve gıcırtı uyarısı · başsız testte normal oyun en çok ≈%63 sınır
+V1.1 · Nokta atışı · Her gemi (tohumlu) bir "sıcak slot" seçer, altın köşeli; doğrudan güvertede ve |dx|≤14 ise +2 · §6.4 slotları
+V1.1 · Ağırlık · Her kargo yoğunluğu 0,85–1,25× (spawnRng), handling/√çarpan, kg etiketi; rüzgâr ivmesi (8/kütle)^0,3 ile ölçeklenir (0,7–1,4) · koşuya göre değişen ağırlık
+V1.1 · Yeni şekiller · tall (44×90), wedge (trapez), ball (daire, yuvarlanır, 4 puan) · "farklı boyut ve şekiller"; minScore 12/16/24
+V1.1 · Sert iniş · Yana kayma (impact×0,3 px/s) ve dönme eklenir; hasarsız seriyi sıfırlar · "çarpınca kayması veya düşmesi"
+V1.1 · Rüzgâr yönü · İlerleme ≥12'de temel rüzgâr 26 sn periyotlu sinüsle yön değiştirir (6 puanda yumuşak geçiş), sakin anlar olur; HUD'da ok · "değişken yönlü rüzgâr"
+V1.1 · Sonsuz zorluk · 60 puandan sonra parametreler 140 puan boyunca tavanlara yaklaşır (rüzgâr .65, yalpa 8°/2,9 sn, ani rüzgâr 2,3, dalga 26), istif kabul testi (e) tavanda geçer · tavanlı ve adil
+V1.1 · Hayalet · En iyi normal koşunun helikopter yolu (0,2 sn örnek) ve skor çizelgesi `ss.ghost`'ta; yarı saydam helikopter oynatılır, HUD'da "GHOST ±n" · Daily'de yok
+V1.1 · Madalya eşikleri · 20/60/120/200 (çarpanlı skora göre) · eski eşikler yeni ölçekte anlamsız
+V1.1 · Doğrulama · Tarayıcıda çalıştırılmadı (CLAUDE.md); saf mantık (scoring, placement, ropeLoad matter-js, ghost, weather, endless) testli

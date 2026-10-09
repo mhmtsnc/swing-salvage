@@ -1,24 +1,21 @@
 import type { Tuning } from '../config/tuning';
+import type { Grade, ScoreResult } from './scoring';
 
 export type RunState = 'READY' | 'PLAYING' | 'SWAPPING' | 'FAILING' | 'GAME_OVER' | 'PAUSED' | 'RESUMING';
 export type FailKind = 'splash' | 'crash' | 'topple';
 export type RunMode = 'normal' | 'daily';
 
-export interface StackResult {
-  base: number;
-  perfectBonus: number;
-  steadyBonus: number;
-  gained: number;
-  perfect: boolean;
-  steady: boolean;
-  streak: number;
-}
 
 /** Koşu durumu ve puanlama (saf). Fizik kuralları GameScene'dedir. */
 export class Run {
   state: RunState = 'READY';
   score = 0;
+  /** Zorluk ilerlemesi (eski ölçekli puan: temel + perfect +1 + gemi bonusu). Çarpanlı skordan ayrıdır. */
+  progress = 0;
+  /** Ardışık PERFECT serisi */
   streak = 0;
+  /** Hasarsız teslimat serisi */
+  cleanStreak = 0;
   shipIndex = 0;
   /** Bu gemide STACKED sayısı */
   stacked = 0;
@@ -37,7 +34,9 @@ export class Run {
   reset(state: RunState = 'READY', startScore = 0): void {
     this.state = state;
     this.score = startScore;
+    this.progress = startScore;
     this.streak = 0;
+    this.cleanStreak = 0;
     this.shipIndex = 0;
     this.stacked = 0;
     this.delivered = 0;
@@ -60,34 +59,22 @@ export class Run {
     if (this.state === 'READY') this.state = 'PLAYING';
   }
 
-  /** STACKED olduğunda (§7.3). */
-  onStacked(points: number, perfect: boolean): StackResult {
-    const r = this.t.rules;
-    let perfectBonus = 0;
-    let steadyBonus = 0;
-    let steady = false;
-    if (perfect) {
-      this.streak++;
-      this.perfects++;
-      perfectBonus = r.perfectBonus;
-      if (this.streak % r.steadyEvery === 0) {
-        steady = true;
-        steadyBonus = r.steadyBonus;
-      }
-    } else {
-      this.streak = 0;
-    }
-    const gained = points + perfectBonus + steadyBonus;
-    this.score += gained;
+  /** STACKED olduğunda: `scorePlacement` sonucunu işler. */
+  commit(r: ScoreResult, grade: Grade): void {
+    this.score += r.gained;
+    this.progress += r.progressGain;
+    this.streak = r.perfectStreak;
+    this.cleanStreak = r.cleanStreak;
+    if (grade !== 'normal') this.perfects++;
     this.stacked++;
     this.delivered++;
-    this.log.push(perfect ? 'p' : 'c');
-    return { base: points, perfectBonus, steadyBonus, gained, perfect, steady, streak: this.streak };
+    this.log.push(grade !== 'normal' ? 'p' : 'c');
   }
 
   beginSwap(): number {
     this.state = 'SWAPPING';
     this.score += this.t.ship.shipBonus;
+    this.progress += this.t.ship.shipBonus;
     return this.t.ship.shipBonus;
   }
 

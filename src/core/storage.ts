@@ -16,6 +16,16 @@ export interface DailyState {
   streak: number;
 }
 
+export interface GhostData {
+  score: number;
+  /** Örnekleme aralığı, sn */
+  dt: number;
+  /** x, y, yön (−1/+1) üçlüleri düz dizi */
+  samples: number[];
+  /** [zaman, skor] çiftleri */
+  scores: [number, number][];
+}
+
 export interface StorageSchema {
   'ss.v': number;
   'ss.best': number;
@@ -27,6 +37,7 @@ export interface StorageSchema {
   'ss.daily': DailyState;
   'ss.ads': { lastInterstitialAt: number; runsSinceInterstitial: number };
   'ss.tuning': Record<string, unknown>;
+  'ss.ghost': GhostData;
 }
 export type StorageKey = keyof StorageSchema;
 
@@ -47,6 +58,7 @@ export const DEFAULTS: StorageSchema = {
   'ss.daily': { date: '', attemptsUsed: 0, best: 0, playedDays: [], streak: 0 },
   'ss.ads': { lastInterstitialAt: 0, runsSinceInterstitial: 0 },
   'ss.tuning': {},
+  'ss.ghost': { score: 0, dt: 0.2, samples: [], scores: [] },
 };
 
 const memory = new Map<string, string>();

@@ -1,4 +1,4 @@
-import { TUNING } from '../config/tuning';
+import { TUNING, type Tuning } from '../config/tuning';
 
 export type DifficultyPoint = (typeof TUNING.difficulty)[number];
 export type DifficultyParams = Omit<DifficultyPoint, 's'>;
@@ -25,6 +25,30 @@ export function difficultyAt(
   for (const k of Object.keys(a) as (keyof DifficultyPoint)[]) {
     if (k === 's') continue;
     out[k] = a[k] + (b[k] - a[k]) * t;
+  }
+  return out as unknown as DifficultyParams;
+}
+
+export type EndlessCaps = Tuning['endless'];
+
+/**
+ * Sonsuz zorluk: 60 puana kadar `difficultyAt`; sonrasında her parametre `endless` sınırlarına doğru
+ * `span` puan boyunca lineer yaklaşır ve orada kalır (adil kalması için tavanlıdır).
+ */
+export function difficultyEndless(
+  progress: number,
+  table: readonly DifficultyPoint[] = TUNING.difficulty,
+  caps: EndlessCaps = TUNING.endless,
+): DifficultyParams {
+  const base = difficultyAt(progress, table);
+  const last = table[table.length - 1];
+  if (progress <= last.s) return base;
+  const k = Math.min(1, (progress - last.s) / caps.span);
+  const out = { ...base } as Record<string, number>;
+  for (const key of Object.keys(base) as (keyof DifficultyParams)[]) {
+    const from = (base as Record<string, number>)[key];
+    const to = (caps as unknown as Record<string, number>)[key];
+    out[key] = from + (to - from) * k;
   }
   return out as unknown as DifficultyParams;
 }

@@ -11,7 +11,11 @@ import { STORE_URL } from '../config/app';
 import { STRINGS, fmt } from '../config/strings';
 import { FixedStepper, STEP_MS, toStepAcc } from '../core/time';
 import { getItem, setItem } from '../core/storage';
-import { difficultyAt } from '../game/Difficulty';
+import { difficultyEndless } from '../game/Difficulty';
+import { scorePlacement, stormMultiplier, type ScoreResult } from '../game/scoring';
+import { RopeLoad } from '../game/ropeLoad';
+import { GhostRecorder, ghostPoseAt, ghostScoreAt } from '../core/ghost';
+import type { GhostData } from '../core/storage';
 import { Helicopter } from '../game/Helicopter';
 import { Rope } from '../game/Rope';
 import { Cargo } from '../game/Cargo';
@@ -24,6 +28,7 @@ import { WeatherFx } from '../game/WeatherFx';
 import { Fx } from '../game/Fx';
 import { Feedback } from '../game/Feedback';
 import { loops } from '../core/audio';
+import { HELI_ORIGIN } from '../art/textures';
 import { ads } from '../core/ads';
 import type { MedalTier } from '../core/summary';
 import { classifyPlacement, findBelow } from '../game/placement';
@@ -53,6 +58,12 @@ export class GameScene extends Phaser.Scene {
   private lastRunSec = 0;
   private rewardedThisGameOver = false;
   private resumeT = 0;
+  private ropeLoad = new RopeLoad();
+  private creakAt = 0;
+  private runTime = 0;
+  private ghostRec!: GhostRecorder;
+  private ghostData: GhostData | null = null;
+  private ghostImg!: Phaser.GameObjects.Image;
   private counted: { delivered: number; perfects: number; runCounted: boolean; medal: MedalTier | null } = {
     delivered: 0, perfects: 0, runCounted: false, medal: null,
   };
@@ -98,17 +109,25 @@ export class GameScene extends Phaser.Scene {
     this.measure();
 
     this.sea = new Sea(this);
-    this.waveAmp = difficultyAt(this.startScore, this.T.difficulty).waveAmp;
-    this.ship = new Ship(this, this.T, this.seaY, difficultyAt(this.startScore, this.T.difficulty).rollAmpDeg);
+    this.waveAmp = this.diffAt(this.startScore).waveAmp;
+    this.ship = new Ship(this, this.T, this.seaY, this.diffAt(this.startScore).rollAmpDeg);
     this.heli = new Helicopter(this, this.T, { W: this.W, seaY: this.seaY });
     this.rope = new Rope(this, this.T, this.heli.winchPoint());
     const seedParam = Number(q.get('seed'));
     this.fixedSeed = Number.isFinite(seedParam) && q.get('seed') ? seedParam : null;
     this.weatherFx = new WeatherFx(this);
     this.fx = new Fx(this);
+    this.ghostRec = new GhostRecorder(this.T.ghost.sampleEvery);
+    this.ghostImg = this.add
+      .image(0, 0, `heli_${getItem('ss.paint')}`)
+      .setOrigin(HELI_ORIGIN.x, HELI_ORIGIN.y)
+      .setAlpha(0.32)
+      .setDepth(14.8)
+      .setVisible(false);
+    this.loadGhost();
     this.fb = new Feedback(this, this.fx, this.T);
     this.makeRngs();
-    this.rainLevel = difficultyAt(this.startScore, this.T.difficulty).rain;
+    this.rainLevel = this.diffAt(this.startScore).rain;
     this.best = getItem('ss.best');
     this.startRun('READY');
     this.spawnAt = 0;
@@ -185,6 +204,11 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /** Sonsuz zorluk eğrisi, ilerleme puanına göre. */
+  private diffAt(progress: number) {
+    return difficultyEndless(progress, this.T.difficulty, this.T.endless);
+  }
+
   private get collider(): Collider {
     return this.matter.query as unknown as Collider;
   }
@@ -193,6 +217,7 @@ export class GameScene extends Phaser.Scene {
   private makeRngs(): void {
     this.seed = this.fixedSeed ?? (this.mode === 'daily' ? this.dailyNow().seed : Date.now() >>> 0);
     this.spawner = new Spawner(createRng(`${this.seed}:spawn`), this.T);
+    this.ship.setHotSlot(this.spawner.pickHotSlot(this.T.ship.slotCentersX.length));
     this.weather = new Weather(createRng(`${this.seed}:weather`), this.T, {
       onGustWarn: (dir) => {
         this.fb.gustWarn();
@@ -247,6 +272,7 @@ export class GameScene extends Phaser.Scene {
 
   private onPaint(id: string): void {
     this.heli.setPaint(id);
+    this.ghostImg.setTexture(`heli_${id}`);
   }
 
   /** Onboarding için: dünya koordinatları. */
@@ -303,7 +329,7 @@ export class GameScene extends Phaser.Scene {
     this.oldShip = null;
     this.ship.destroy();
     this.measure();
-    const d = difficultyAt(this.startScore, this.T.difficulty);
+    const d = this.diffAt(this.startScore);
     this.waveAmp = d.waveAmp;
     this.ship = new Ship(this, this.T, this.seaY, d.rollAmpDeg);
     this.heli.setBounds(this.W, this.seaY);
@@ -316,6 +342,10 @@ export class GameScene extends Phaser.Scene {
     this.summary = null;
     this.attemptConsumed = false;
     this.culprit = null;
+    this.runTime = 0;
+    this.ghostRec.reset();
+    this.ropeLoad.reset();
+    this.loadGhost();
     this.counted = { delivered: 0, perfects: 0, runCounted: false, medal: null };
     this.rewardedThisGameOver = false;
     this.stepper.reset();
@@ -396,8 +426,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   private spawnCargo(): void {
-    const pick = this.spawner.next(this.run.score, this.W);
-    const c = new Cargo(this, this.T, pick.type, pick.x);
+    const pick = this.spawner.next(this.run.progress, this.W);
+    const c = new Cargo(this, this.T, pick.type, pick.x, pick.weightMul);
     this.cargos.push(c);
     this.active = c;
     this.fb.spawned(pick.x, waterY(pick.x, this.simTime, this.seaY, this.waveAmp) - 10);
@@ -405,19 +435,19 @@ export class GameScene extends Phaser.Scene {
 
   private fixedStep(): void {
     const run = this.run;
-    const d = difficultyAt(run.score, this.T.difficulty);
+    const d = this.diffAt(run.progress);
     this.waveAmp += Phaser.Math.Clamp(d.waveAmp - this.waveAmp, -WAVE_RATE / 60, WAVE_RATE / 60);
     this.ship.step(d.rollAmpDeg, d.rollPeriod);
 
     const live = run.state === 'PLAYING' || run.state === 'SWAPPING' || run.state === 'FAILING' || run.state === 'RESUMING';
-    if (live) this.weather.step(STEP_MS / 1000, d, run.score, run.state === 'SWAPPING' || run.state === 'RESUMING');
-    const base = live ? this.weather.baseAccel(d) : 0;
+    if (live) this.weather.step(STEP_MS / 1000, d, run.progress, run.state === 'SWAPPING' || run.state === 'RESUMING');
+    const base = live ? this.weather.baseAccel(d, run.progress) : 0;
     const gust = live ? this.weather.gustAccel() : 0;
 
     const carried = this.active?.state === 'CARRIED' ? this.active : null;
     this.heli.step(carried ? carried.handling : 1, base + gust);
     this.rope.step(this.heli.winchPoint());
-    if (base + gust !== 0) this.pushBody(this.rope.endBody, base + gust);
+    if (base + gust !== 0) this.pushBody(this.rope.endBody, (base + gust) * this.massScale(this.rope.endBody));
     if (gust !== 0) {
       const f = gust * this.T.weather.stackGustFactor;
       for (const c of this.cargos) {
@@ -428,6 +458,11 @@ export class GameScene extends Phaser.Scene {
 
     this.matter.step(STEP_MS);
     this.simTime += STEP_MS / 1000;
+    if (run.state === 'PLAYING' || run.state === 'SWAPPING') {
+      this.runTime += STEP_MS / 1000;
+      this.ghostRec.tick(this.runTime, this.heli.x, this.heli.y, this.heli.facing);
+    }
+    this.trackCarried(this.active?.state === 'CARRIED' ? this.active : null);
 
     if (run.state === 'READY' || run.state === 'PLAYING') this.trySpawn();
     if (run.state !== 'PLAYING' && run.state !== 'SWAPPING') return;
@@ -437,6 +472,86 @@ export class GameScene extends Phaser.Scene {
     this.handleSettling();
     this.checkFailures();
     this.checkSwap();
+  }
+
+  /** Kendi rekoruna karşı hayalet: normal modda, kayıtlı en iyi koşu. */
+  private loadGhost(): void {
+    const g = getItem('ss.ghost');
+    this.ghostData = this.mode === 'normal' && g.samples.length >= 6 ? g : null;
+  }
+
+  /** Hayaletin şu anki skoru farkı (bizim − onun); hayalet yoksa null. */
+  ghostDiff(): number | null {
+    if (!this.ghostData || this.run.state === 'READY') return null;
+    return this.run.score - ghostScoreAt(this.ghostData, this.runTime);
+  }
+
+  get stormMult(): number {
+    return stormMultiplier(this.run.progress, this.T.scoring);
+  }
+
+  get comboMult(): number {
+    const sc = this.T.scoring;
+    return 1 + Math.min(sc.comboMax, Math.max(0, this.run.streak - 1) * sc.comboStep);
+  }
+
+  /** HUD rüzgâr oku: yön ve şiddet (−1..1). */
+  windIndicator(): number {
+    const d = this.diffAt(this.run.progress);
+    const max = this.T.endless.windBase;
+    return this.weather.windSign(this.run.progress) * Math.min(1, d.windBase / max + 0.15);
+  }
+
+  /** Hafif kargo rüzgârdan daha çok etkilenir, ağır olan daha az. */
+  private massScale(b: MatterJS.BodyType): number {
+    return Phaser.Math.Clamp(Math.pow(8 / Math.max(b.mass, 0.001), 0.3), 0.7, 1.4);
+  }
+
+  /** Taşınan kargo: salınım zirvesi, taşıma süresi, "kıl payı" ve halat yükü (kopma riski). */
+  private trackCarried(c: Cargo | null): void {
+    if (!c || !c.body) {
+      this.ropeLoad.reset();
+      this.rope.setStrain(0);
+      return;
+    }
+    const dt = STEP_MS / 1000;
+    c.carrySec = this.simTime - c.pickedAt;
+    // salınım: zirve 40°/sn ile sönen tutucu (son ~0,5 sn)
+    c.swingPeak = Math.max(this.rope.swingDeg(), c.swingPeak - 40 * dt);
+    // kıl payı: su çizgisinin hemen üstünde ama batmadan
+    const water = waterY(c.centerX, this.simTime, this.seaY, this.waveAmp);
+    const gap = water - c.bottom();
+    if (gap > 0 && gap < this.T.rules.closeCallDist) c.closeT += dt;
+    if (c.closeT >= this.T.rules.closeCallTime) c.closeCall = true;
+    // halat yükü
+    const v = c.body.velocity;
+    const snap = this.ropeLoad.update(v.x, v.y, dt, this.T.ropeLoad, this.T.world.gravityY * 1000, c.body.mass);
+    const ratio = this.ropeLoad.ratio(this.T.ropeLoad, c.body.mass);
+    this.rope.setStrain(ratio);
+    if (ratio > this.T.ropeLoad.warnFrac && this.simTime - this.creakAt > 0.6) {
+      this.creakAt = this.simTime;
+      this.fb.creak();
+    }
+    if (snap && this.run.state === 'PLAYING') this.snapRope(c);
+  }
+
+  /** Halat koptu: kargo serbest kalır, sert iniş sayılır (güverteye düşerse oturur, suya düşerse SPLASH). */
+  private snapRope(c: Cargo): void {
+    if (!c.body) return;
+    this.fb.snap(c.body.position.x, c.body.position.y);
+    c.damaged = true;
+    c.placement = {
+      grade: 'normal', sweet: false, perfect: false, hard: true, alignDx: 99, angleDeg: 90, impact: this.T.rules.hardLandingImpact,
+    };
+    c.state = 'SETTLING';
+    c.calmTime = 0;
+    c.contactTime = 0;
+    c.toShipLayer();
+    this.rope.detachToHook();
+    this.ropeLoad.reset();
+    this.active = null;
+    this.spawnAt = this.simTime + this.T.rules.nextSpawnDelay;
+    this.game.events.emit('ss:snap');
   }
 
   /** Yatay ivme (px/s²) → bu adımın hız farkı. */
@@ -457,6 +572,8 @@ export class GameScene extends Phaser.Scene {
     const hp = this.rope.hook.position;
     if (Math.hypot(hp.x - top.x, hp.y - top.y) < this.T.hook.pickupRadius) {
       c.pickUp(this.matter, this.simTime);
+      c.gustHook = this.weather.phase === 'ACTIVE';
+      this.ropeLoad.reset();
       this.rope.attach(c.body as MatterJS.BodyType, { x: 0, y: -c.h / 2 }, c.w / 2);
       this.fb.hooked(c);
       this.game.events.emit('ss:hooked');
@@ -475,7 +592,11 @@ export class GameScene extends Phaser.Scene {
       if (this.simTime - c.lastContactAt > 0.5) c.impact = 0;
       return;
     }
-    if (!c.touching) c.impact = Math.max(c.impact, c.preSpeed);
+    if (!c.touching) {
+      c.impact = Math.max(c.impact, c.preSpeed);
+      const onShip = this.collider.collides(c.body, [this.ship.body]).length > 0;
+      this.fb.contact(c.body.position.x, c.bottom(), c.preSpeed, !onShip);
+    }
     c.touching = true;
     c.lastContactAt = this.simTime;
     const speed = this.relMotion(c.body).speed;
@@ -499,7 +620,14 @@ export class GameScene extends Phaser.Scene {
       deckAngle: pose.angle,
       impact: c.impact,
       rules: r,
+      hotSlot: this.ship.hotSlot,
     });
+    c.gustLanding = this.weather.phase === 'ACTIVE';
+    c.carrySec = this.simTime - c.pickedAt;
+    if (c.placement.hard) {
+      c.damaged = true;
+      this.hardKick(c);
+    }
     this.fb.released(box.x, box.y + c.h / 2, c.w, c.h, c.placement.hard);
     c.state = 'SETTLING';
     c.calmTime = 0;
@@ -508,6 +636,15 @@ export class GameScene extends Phaser.Scene {
     this.rope.detachToHook();
     this.active = null;
     this.spawnAt = this.simTime + r.nextSpawnDelay;
+  }
+
+  /** Sert inişte kargo yana kayar ve döner (güverteden düşebilir). */
+  private hardKick(c: Cargo): void {
+    if (!c.body) return;
+    const dir = Math.sign(c.body.velocity.x) || (this.ship.pose().angle >= 0 ? 1 : -1);
+    const push = (c.impact * this.T.rules.hardKick) / 60;
+    this.matter.body.setVelocity(c.body, { x: c.body.velocity.x + dir * push, y: c.body.velocity.y });
+    this.matter.body.setAngularVelocity(c.body, c.body.angularVelocity + dir * 0.04);
   }
 
   /** §7.3 oturma: kesintisiz settleTime boyunca sakin ve temasta → STACKED + puan. */
@@ -525,18 +662,59 @@ export class GameScene extends Phaser.Scene {
       const pose = this.ship.pose();
       const loc = worldToShip(pose, this.ship.params, c.body.position);
       c.stackedLocal = { x: loc.x, y: loc.y, angle: c.body.angle - pose.angle };
-      const res = this.run.onStacked(c.points, c.placement?.perfect ?? false);
-      this.fb.placed(c.body.position.x, c.body.position.y, res.perfect, res.steady, res.streak);
+      const grade = c.placement?.grade ?? 'normal';
+      const hard = (c.placement?.hard ?? false) || c.damaged;
+      const res = scorePlacement(
+        {
+          base: c.points,
+          grade,
+          swingDeg: c.swingPeak,
+          hard,
+          sweet: c.placement?.sweet ?? false,
+          risk: { closeCall: c.closeCall, gustHook: c.gustHook, gustLanding: c.gustLanding, saved: c.saved },
+          carrySec: c.carrySec,
+          perfectStreakBefore: this.run.streak,
+          cleanStreakBefore: this.run.cleanStreak,
+          progress: this.run.progress,
+        },
+        this.T.scoring,
+      );
+      this.run.commit(res, grade);
+      this.ghostRec.score(this.runTime, this.run.score);
+      this.fb.placed(c.body.position.x, c.body.position.y, {
+        grade,
+        streak: res.perfectStreak,
+        milestone: res.streakBonus > 0 || res.cleanBonus > 0,
+        sweet: c.placement?.sweet ?? false,
+      });
       this.game.events.emit('ss:placed', {
         x: c.body.position.x,
         y: c.body.position.y,
         gained: res.gained,
-        perfect: res.perfect,
-        steady: res.steady,
-        streak: res.streak,
-        hard: c.placement?.hard ?? false,
+        labels: this.rewardLabels(res, grade),
+        grade,
+        streak: res.perfectStreak,
+        hard,
       });
     }
+  }
+
+  /** Yerleştirme ödüllerinin kısa etiketleri (öncelik sırasıyla). */
+  private rewardLabels(res: ScoreResult, grade: 'normal' | 'perfect' | 'flawless'): string[] {
+    const R = STRINGS.rewards;
+    const out: string[] = [];
+    if (grade === 'flawless') out.push(`${R.flawless} ×${res.placementMult}`);
+    else if (grade === 'perfect') out.push(`${R.perfect} ×${res.placementMult}`);
+    if (res.streakBonus > 0) {
+      out.push(res.perfectStreak === this.T.rules.steadyEvery ? `${STRINGS.steady} +${res.streakBonus}` : `${R.chain} ×${res.perfectStreak} +${res.streakBonus}`);
+    }
+    const label: Record<string, string> = {
+      swing: R.swing, closeCall: R.closeCall, gustHook: R.gustHook, gustLanding: R.gustLanding,
+      saved: R.saved, speedy: R.speedy, sweet: R.sweet,
+    };
+    for (const p of res.parts) if (label[p.key]) out.push(`${label[p.key]} +${p.points}`);
+    if (res.cleanBonus > 0) out.push(`${R.clean} ×${res.cleanStreak} +${res.cleanBonus}`);
+    return out;
   }
 
   /** §7.5 başarısızlıklar: F1 SPLASH, F2 CRASH, F3 TOPPLE. */
@@ -546,8 +724,23 @@ export class GameScene extends Phaser.Scene {
     for (const c of this.cargos) {
       if (!c.body) continue;
       if (c.state === 'CARRIED') {
-        if (t - c.pickedAt >= r.carriedGrace && c.bottom() > waterY(c.centerX, t, this.seaY, this.waveAmp) + r.waterMargin) {
-          return this.triggerFail('splash', c.body.position, c);
+        if (t - c.pickedAt >= r.carriedGrace) {
+          const water = waterY(c.centerX, t, this.seaY, this.waveAmp);
+          if (c.bottom() > water + r.waterMargin) {
+            // Son anda kurtarma: kargo kısa süre batabilir, rescueGrace içinde çekilirse kurtulur.
+            if (c.submergedT === 0) this.fb.waterTouch(c.centerX, water);
+            c.submergedT += STEP_MS / 1000;
+            const v = c.body.velocity;
+            this.matter.body.setVelocity(c.body, { x: v.x * 0.92, y: v.y * 0.92 });
+            if (c.submergedT > r.rescueGrace) return this.triggerFail('splash', c.body.position, c);
+          } else if (c.submergedT > 0) {
+            if (c.submergedT >= 0.08) {
+              c.saved = true;
+              this.fb.saved(c.centerX, water);
+              this.game.events.emit('ss:saved');
+            }
+            c.submergedT = 0;
+          }
         }
       } else if (c.state === 'SETTLING' || c.state === 'STACKED') {
         if (c.bottom() > waterYMid(c.centerX, t, this.seaY, this.waveAmp) + r.waterMargin) {
@@ -636,9 +829,10 @@ export class GameScene extends Phaser.Scene {
       onComplete: () => {
         old.destroy();
         this.oldShip = null;
-        const d = difficultyAt(this.run.score, this.T.difficulty);
+        const d = this.diffAt(this.run.progress);
         const next = new Ship(this, this.T, this.seaY, d.rollAmpDeg);
         next.offsetX = OLD_SHIP_EXIT_X;
+        next.setHotSlot(this.spawner.pickHotSlot(this.T.ship.slotCentersX.length));
         this.ship = next;
         this.tweens.add({
           targets: next,
@@ -688,8 +882,9 @@ export class GameScene extends Phaser.Scene {
       c.sync();
     }
     this.heli.render(delta / 1000);
+    this.renderGhost();
     this.rope.draw();
-    const dRain = difficultyAt(run.score, this.T.difficulty).rain;
+    const dRain = this.diffAt(run.progress).rain;
     this.rainLevel += Phaser.Math.Clamp(dRain - this.rainLevel, -delta / 1000, delta / 1000);
     this.weatherFx.setRain(this.rainLevel);
     this.weatherFx.update(this.weather, this.W, this.H, delta / 1000);
@@ -707,6 +902,16 @@ export class GameScene extends Phaser.Scene {
           `cargo ${this.cargos.map((c) => c.state[0]).join('')}  gust ${this.weather.phase}  seed ${this.seed}`,
       );
     }
+  }
+
+  private renderGhost(): void {
+    const g = this.ghostData;
+    const p = g && this.run.state !== 'READY' && this.run.state !== 'GAME_OVER' ? ghostPoseAt(g, this.runTime) : null;
+    if (!p) {
+      this.ghostImg.setVisible(false);
+      return;
+    }
+    this.ghostImg.setVisible(true).setPosition(p.x, p.y).setScale(-p.facing * this.T.heli.spriteScale, this.T.heli.spriteScale);
   }
 
   private finishFail(): void {
@@ -736,7 +941,10 @@ export class GameScene extends Phaser.Scene {
       if (run.mode === 'daily') setItem('ss.daily', daily);
       setItem('ss.stats', sum.stats);
       setItem('ss.unlocks', sum.unlocked);
-      if (sum.newBest) setItem('ss.best', run.score);
+      if (sum.newBest) {
+        setItem('ss.best', run.score);
+        setItem('ss.ghost', this.ghostRec.data(run.score));
+      }
       if (!this.counted.runCounted) ads.noteRunFinished();
     }
     this.counted = { delivered: run.delivered, perfects: run.perfects, runCounted: true, medal: sum.medal ?? this.counted.medal };

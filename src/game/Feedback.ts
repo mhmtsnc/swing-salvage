@@ -44,18 +44,52 @@ export class Feedback {
     }
   }
 
-  /** Puan alındığında: PERFECT ışıltısı ve seri perdesi, STEADY HANDS konfetisi. */
-  placed(x: number, y: number, perfect: boolean, steady: boolean, streak: number): void {
-    if (perfect) {
+  /** Puan alındığında: derece ışıltısı, seri perdesi, kilometre taşı konfetisi. */
+  placed(x: number, y: number, o: { grade: 'normal' | 'perfect' | 'flawless'; streak: number; milestone: boolean; sweet: boolean }): void {
+    if (o.grade !== 'normal') {
       this.fx.sparkleRing(x, y);
-      play('perfect', { semis: Math.min(MAX_PERFECT_SEMIS, Math.max(0, streak - 1)) });
+      if (o.grade === 'flawless') this.fx.sparkleRing(x, y - 18);
+      play('perfect', { semis: Math.min(MAX_PERFECT_SEMIS, Math.max(0, o.streak - 1)) + (o.grade === 'flawless' ? 3 : 0) });
       haptic('medium');
     }
-    if (steady) {
+    if (o.sweet) play('sweet');
+    if (o.milestone) {
       this.fx.confetti(x, y - 20, 20);
       play('steady');
       haptic('success');
     }
+  }
+
+  /** Gerçekçi temas geri bildirimi: şiddete göre ses/toz; `cargo` = başka kargoya çarpma (tahta takırtısı). */
+  contact(x: number, y: number, impact: number, cargo: boolean): void {
+    const k = Math.min(1, impact / 260);
+    if (k < 0.08) return;
+    if (cargo) play('clack', { vol: 0.5 + 0.5 * k, semis: Phaser.Math.Between(-2, 2) });
+    else play('land', { vol: 0.4 + 0.6 * k, semis: -3 * k });
+    this.fx.dust(x, y, Math.max(1, Math.round(5 * k)));
+    if (k > 0.6) this.fx.shake(this.cam, 1.5 + 2 * k, 90, this.scene.scale.width);
+  }
+
+  creak(): void {
+    play('creak');
+  }
+
+  snap(x: number, y: number): void {
+    play('snap');
+    haptic('heavy');
+    this.fx.burst('dust', x, y, 8, { speed: [80, 240], angle: [-180, 0], gravity: 500, life: [0.3, 0.6], tint: 0x5a4636 });
+    this.fx.shake(this.cam, this.T.fx.shakeHard, 150, this.scene.scale.width);
+  }
+
+  waterTouch(x: number, y: number): void {
+    this.fx.drops(x, y, 7);
+    play('splash_small');
+  }
+
+  saved(x: number, y: number): void {
+    this.fx.sparkleRing(x, y);
+    play('save');
+    haptic('medium');
   }
 
   gustWarn(): void {

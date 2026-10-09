@@ -52,6 +52,23 @@ describe('classifyPlacement', () => {
   });
 });
 
+describe('derece ve nokta atışı', () => {
+  it('FLAWLESS: dx ≤ 3, açı ≤ 1.5°, çarpma ≤ 90', () => {
+    expect(classifyPlacement(base({ cargo: { x: 112, y: 600, w: 72, h: 56, angle: 0 }, impact: 80 })).grade).toBe('flawless');
+    expect(classifyPlacement(base({ cargo: { x: 115, y: 600, w: 72, h: 56, angle: 0 }, impact: 80 })).grade).toBe('perfect');
+    expect(classifyPlacement(base({ impact: 120 })).grade).toBe('perfect');
+    expect(classifyPlacement(base({ impact: 200 })).grade).toBe('normal');
+  });
+  it('nokta atışı: sıcak slotta ve dx ≤ 14, altında kargo yokken', () => {
+    expect(classifyPlacement(base({ hotSlot: 0 })).sweet).toBe(true);
+    expect(classifyPlacement(base({ hotSlot: 1 })).sweet).toBe(false);
+    expect(classifyPlacement(base({ hotSlot: 0, cargo: { x: 126, y: 600, w: 72, h: 56, angle: 0 } })).sweet).toBe(false);
+    const below = { x: 110, y: 650, w: 72, h: 56, angle: 0 };
+    expect(classifyPlacement(base({ hotSlot: 0, below })).sweet).toBe(false);
+    expect(classifyPlacement(base({ hotSlot: 0, impact: 230 })).sweet).toBe(false);
+  });
+});
+
 describe('findBelow', () => {
   const a = { x: 110, y: 700, w: 72, h: 56 };
   const b = { x: 110, y: 644, w: 72, h: 56 };

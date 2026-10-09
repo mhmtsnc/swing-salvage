@@ -6,6 +6,10 @@ export interface PlacementRules {
   perfectMaxAngleDeg: number;
   perfectMaxImpact: number;
   hardLandingImpact: number;
+  flawlessMaxDx: number;
+  flawlessMaxAngleDeg: number;
+  flawlessMaxImpact: number;
+  sweetSpotMaxDx: number;
 }
 
 export interface PlacementInput {
@@ -20,9 +24,16 @@ export interface PlacementInput {
   /** Temas penceresinde ölçülen en yüksek çarpma hızı (px/s) */
   impact: number;
   rules: PlacementRules;
+  /** Gemideki "nokta atışı" slotu (indeks); yoksa null */
+  hotSlot?: number | null;
 }
 
+export type Grade = 'normal' | 'perfect' | 'flawless';
+
 export interface PlacementResult {
+  grade: Grade;
+  /** Doğrudan güvertedeki ve nokta atışı slotunun içinde mi */
+  sweet: boolean;
   perfect: boolean;
   hard: boolean;
   alignDx: number;
@@ -56,6 +67,7 @@ export function classifyPlacement(input: PlacementInput): PlacementResult {
   const { cargo, below, slotCentersX, deckAngle, impact, rules } = input;
   let targetX: number;
   let surfaceAngle: number;
+  let slotIdx = -1;
   if (below) {
     targetX = below.x;
     surfaceAngle = below.angle;
@@ -64,7 +76,11 @@ export function classifyPlacement(input: PlacementInput): PlacementResult {
     if (cargo.w >= 100 && slotCentersX.length > 1) {
       targetX = slotCentersX.reduce((a, b) => a + b, 0) / slotCentersX.length;
     } else {
-      targetX = slotCentersX.reduce((best, s) => (Math.abs(s - cargo.x) < Math.abs(best - cargo.x) ? s : best), slotCentersX[0]);
+      slotIdx = 0;
+      slotCentersX.forEach((sx, i) => {
+        if (Math.abs(sx - cargo.x) < Math.abs(slotCentersX[slotIdx] - cargo.x)) slotIdx = i;
+      });
+      targetX = slotCentersX[slotIdx];
     }
   }
   const alignDx = cargo.x - targetX;
@@ -73,5 +89,15 @@ export function classifyPlacement(input: PlacementInput): PlacementResult {
     Math.abs(alignDx) <= rules.perfectMaxDx &&
     angleDeg <= rules.perfectMaxAngleDeg &&
     impact <= rules.perfectMaxImpact;
-  return { perfect, hard: impact >= rules.hardLandingImpact, alignDx, angleDeg, impact };
+  const flawless =
+    perfect &&
+    Math.abs(alignDx) <= rules.flawlessMaxDx &&
+    angleDeg <= rules.flawlessMaxAngleDeg &&
+    impact <= rules.flawlessMaxImpact;
+  const hard = impact >= rules.hardLandingImpact;
+  const sweet = !below && slotIdx >= 0 && input.hotSlot === slotIdx && Math.abs(alignDx) <= rules.sweetSpotMaxDx && !hard;
+  return {
+    grade: flawless ? 'flawless' : perfect ? 'perfect' : 'normal',
+    sweet, perfect, hard, alignDx, angleDeg, impact,
+  };
 }
