@@ -6,7 +6,7 @@ export const FONT = 'Fredoka';
 export const MIN_TAP = 48;
 const CARD_RADIUS = 14;
 
-export type IconKind = 'play' | 'pause' | 'calendar' | 'heli' | 'gear' | 'share' | 'home' | 'lock' | 'chevrons' | 'back' | 'check';
+export type IconKind = 'play' | 'pause' | 'calendar' | 'heli' | 'gear' | 'share' | 'home' | 'lock' | 'chevrons' | 'back' | 'check' | 'trophy' | 'crate' | 'next' | 'prev';
 
 export function label(
   scene: Phaser.Scene,
@@ -101,6 +101,24 @@ export function icon(scene: Phaser.Scene, kind: IconKind, color: string = PALETT
       break;
     case 'check':
       P([[-7, 0], [-2, 5], [7, -6]]);
+      break;
+    case 'trophy':
+      P([[-6, -9], [6, -9], [6, -2], [3, 3], [-3, 3], [-6, -2]], true);
+      P([[-6, -6], [-10, -6], [-10, -3], [-6, 0]]);
+      P([[6, -6], [10, -6], [10, -3], [6, 0]]);
+      P([[0, 3], [0, 8]]);
+      P([[-5, 9], [5, 9]]);
+      break;
+    case 'crate':
+      g.strokeRoundedRect(-9 * k, -8 * k, 18 * k, 16 * k, 3 * k);
+      P([[-9, -2], [9, -2]]);
+      P([[0, -8], [0, 8]]);
+      break;
+    case 'next':
+      P([[-3, -8], [5, 0], [-3, 8]]);
+      break;
+    case 'prev':
+      P([[3, -8], [-5, 0], [3, 8]]);
       break;
   }
   return g;
@@ -257,4 +275,11 @@ export class Toggle {
 /** Metin değişmediyse yeniden çizme (Phaser Text her setText'te canvas'ı yeniler). */
 export function setText(t: Phaser.GameObjects.Text, s: string): void {
   if (t.text !== s) t.setText(s);
+}
+
+/** Yatay ilerleme çubuğu (merkez x, y). */
+export function drawBar(g: Phaser.GameObjects.Graphics, cx: number, cy: number, w: number, h: number, frac: number, color: string, bg: string = '#DDD6C6'): void {
+  g.fillStyle(hex(bg), 1).fillRoundedRect(cx - w / 2, cy - h / 2, w, h, h / 2);
+  const f = Math.max(0, Math.min(1, frac));
+  if (f > 0) g.fillStyle(hex(color), 1).fillRoundedRect(cx - w / 2, cy - h / 2, Math.max(h, w * f), h, h / 2);
 }

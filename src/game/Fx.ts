@@ -1,5 +1,13 @@
 import Phaser from 'phaser';
 import { PALETTE, hex } from '../config/palette';
+import { getItem } from '../core/storage';
+
+let shakeOn = true;
+
+/** Ayarlardan: ekran sarsıntısı açık mı (juice yorgunluğu için kapatılabilir). */
+export function refreshShakeSetting(): void {
+  shakeOn = getItem('ss.shake');
+}
 
 interface Particle {
   img: Phaser.GameObjects.Image;
@@ -96,7 +104,7 @@ export class Fx {
 
   /** Kamera sarsıntısı (sadece verilen kamera). */
   shake(cam: Phaser.Cameras.Scene2D.Camera, px: number, ms: number, width: number): void {
-    cam.shake(ms, px / width);
+    if (shakeOn) cam.shake(ms, px / width);
   }
 
   /** Ölçek "pop": 1,08 → 1, 80 ms. */

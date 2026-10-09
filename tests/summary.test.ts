@@ -63,4 +63,23 @@ describe('summarizeRun', () => {
     const s = summarizeRun(input({ score: 210, delivered: 30 }));
     expect(s.newPaints).toContain('gold');
   });
+  it('aynı kıl payı mesajı art arda tekrarlanmaz (varyasyon)', () => {
+    const st = { ...stats0(), medals: { bronze: 1, silver: 0, gold: 0, platinum: 0 }, cratesLifetime: 80 };
+    const base = input({ stats: st, bestNormal: 8, score: 6, prevUnlocks: ['rescue', 'sunny'] });
+    const first = summarizeRun(base);
+    expect(first.messageKind).toBe('near');
+    const second = summarizeRun({ ...base, lastKind: first.messageKind });
+    expect(second.messageKind).toBe('unlock');
+    const third = summarizeRun({ ...base, lastKind: 'unlock' });
+    expect(third.messageKind).toBe('near');
+  });
+  it('yeni boya ve ilk madalya mesajları art arda da gösterilir', () => {
+    const st = { ...stats0(), cratesLifetime: 25 };
+    expect(summarizeRun({ ...input({ stats: st, score: 22, delivered: 6 }), lastKind: 'paint' }).messageKind).toBe('paint');
+  });
+  it('XP adayı: sonraki rütbeye kalan', () => {
+    const st = { ...stats0(), cratesLifetime: 300, medals: { bronze: 1, silver: 0, gold: 0, platinum: 1 } };
+    const s2 = summarizeRun({ ...input({ stats: st, bestNormal: 99, score: 3, prevUnlocks: ['rescue', 'sunny', 'mint', 'navy', 'gold'] }), xpToRank: { remaining: 40, rank: 3 } });
+    expect(s2.message).toBe('40 XP to rank 3');
+  });
 });

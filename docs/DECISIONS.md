@@ -81,3 +81,20 @@ V1.1 · Sonsuz zorluk · 60 puandan sonra parametreler 140 puan boyunca tavanlar
 V1.1 · Hayalet · En iyi normal koşunun helikopter yolu (0,2 sn örnek) ve skor çizelgesi `ss.ghost`'ta; yarı saydam helikopter oynatılır, HUD'da "GHOST ±n" · Daily'de yok
 V1.1 · Madalya eşikleri · 20/60/120/200 (çarpanlı skora göre) · eski eşikler yeni ölçekte anlamsız
 V1.1 · Doğrulama · Tarayıcıda çalıştırılmadı (CLAUDE.md); saf mantık (scoring, placement, ropeLoad matter-js, ghost, weather, endless) testli
+V1.2 · Araştırma · `docs/RESEARCH.md`: Reddit ve çoğu site bu ortamda erişilemezdi (arama aracı engelli, sayfa getirme 403); bulgular arama özetlerine dayanır ve kaynaklıdır, geri kalanı çıkarım olarak işaretli · dürüst kapsam
+V1.2 · Görevler · 3 kademeli kalıcı görev (kolay/orta/zor), biten görevin yerine AYNI kademeden yenisi gelir (Alto'daki "üçünü bitirmeden yeni yok" tıkanması yok); günlük görev (orta kademe, tarihe göre sabit) · Jetpack Joyride/Alto kanıtı
+V1.2 · Görev ödülleri · XP 30/70/140 (+günlük 60); zor görev ve günlük görev 1 kasa verir · para birimi yok (P11), sadece kozmetik
+V1.2 · Rütbe · XP eşiği 100+45·rütbe; her rütbe atlamada 1 kasa; unvanlar Deckhand…Legend of the Deep · uzun vade ilerleme çizgisi
+V1.2 · Kozmetikler · 14 boya (6 mevcut + 8 kasa) ve 7 iz (hiçbiri/kıvılcım/baloncuk/duman/yaprak/konfeti/yıldız); nadirlik ağırlığı 70/25/5, her 5. kasada en az "rare" garantisi, hepsi açıksa 60 XP · Crossy Road koleksiyon kanıtı; değişken ödül
+V1.2 · Kasa kaynakları · görev, rütbe atlama, başarım ve günlük hediye (giriş) · her gün gelmek için sebep, ama affedici
+V1.2 · Giriş serisi · Her yeni gün 1 kasa; 7. günlerde +1 kasa ve 1 kalkan (en çok 2); tek gün kaçırınca kalkan seriyi korur · "ev ödevi" hissi ve ceza yok (kanıt 12)
+V1.2 · Not harfi · S ≥150 puan ve ≥%50 isabet, A ≥80, B ≥40, C ≥15, D · ustalık hedefi; S başarımı var
+V1.2 · Başarımlar · 26 adet, çoğu 1–3 kasa verir, Stats ekranında sayfalı ve ilerlemeli · uzun vade hedef listesi
+V1.2 · Hedef-gradyan · HUD'da rekora ilerleme çubuğu (rekor aşılınca altın); oyun sonunda çubuk ve "kaldı" yazısı · near-miss çalışması
+V1.2 · Mesaj varyasyonu · Aynı türden mesaj art arda gösterilmez (yeni boya/ilk madalya hariç); yeni aday: "N XP to rank R" · Wordle near-miss bulgusu: tekrarlanan near-miss motivasyonu düşürür
+V1.2 · Kavrama yardımı · İlk 10 koşuda yakalama yarıçapı +%60 ve kanca manyetizması (520 px/s² · yaklaştıkça, taban %35 deneyimli oyuncuda); yakınlaşınca halka işareti · fizik/kavrama şikâyetleri ve ilk-90-sn bulgusu
+V1.2 · Gün döngüsü · Gemi başına ışık: gün → altın saat → alacakaranlık → gece → şafak (MULTIPLY katman), gemi değişiminde yumuşak geçiş · "aynı şeyin tekrarı" şikâyeti
+V1.2 · Ayarlar · "Screen shake" anahtarı (`ss.shake`); varsayılan açık · juice yorgunluğu bulgusu
+V1.2 · Rüzgâr sesi · Üçüncü döngü sesi: bant geçiren gürültü, şiddete göre ses ve frekans · atmosfer, müzik değil (§18)
+V1.2 · Çifte sayım · Meta (görev/XP/başarım/geçmiş) SECOND CHANCE sonrası ikinci bitişte yalnızca fark olarak işlenir (`deltaMetrics`) · çifte sayım olmasın
+V1.2 · Yapılmayanlar · Bildirimler (yeni bağımlılık), liderlik tablosu/bulut kaydı (§18), reklam kuralları değiştirilmedi · kapsam dışı

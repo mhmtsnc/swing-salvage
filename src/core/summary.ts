@@ -36,6 +36,10 @@ export interface SummaryInput {
   prevUnlocks: readonly string[];
   /** SECOND CHANCE ile devam eden koşuda önceden sayılanlar (çifte sayımı önler) */
   already?: { runCounted: boolean; medal: MedalTier | null };
+  /** Son gösterilen mesaj türü: aynı "kıl payı" mesajı art arda tekrar etmesin (Wordle near-miss bulgusu) */
+  lastKind?: string;
+  /** Sonraki rütbeye kalan XP (varsa mesaj adayı) */
+  xpToRank?: { remaining: number; rank: number } | null;
 }
 
 export interface Summary {
@@ -46,6 +50,7 @@ export interface Summary {
   newPaints: PaintId[];
   unlocked: PaintId[];
   message: string;
+  messageKind: string;
 }
 
 /** Koşu sonu: istatistik güncellemesi, madalya, yeni kilit ve §11.4 mesaj önceliği (saf). */
@@ -66,19 +71,19 @@ export function summarizeRun(i: SummaryInput): Summary {
   const newPaints = unlocked.filter((id) => !i.prevUnlocks.includes(id) && id !== 'rescue');
   const newBest = r.mode === 'normal' && r.score > i.bestNormal;
 
-  let message: string;
   const paintName = (id: PaintId): string => STRINGS.paints[id];
-  if (newPaints.length) {
-    message = fmt(STRINGS.newPaint, { paint: paintName(newPaints[0]) });
-  } else if (firstMedal && medal) {
-    message = fmt(STRINGS.firstMedal, { medal: STRINGS.medals[medal] });
-  } else if (!newBest && r.mode === 'normal' && i.bestNormal > r.score && i.bestNormal - r.score <= Math.max(3, Math.round(i.bestNormal * 0.1)) && r.score > 0) {
-    message = fmt(STRINGS.soClose, { n: i.bestNormal - r.score });
-  } else {
-    const next = nextUnlockProgress(stats);
-    message = next
-      ? fmt(STRINGS.unlockProgress, { n: next.remaining, paint: paintName(next.paint) })
-      : fmt(STRINGS.delivered, { n: r.delivered });
-  }
-  return { stats, medal, firstMedal, newBest, newPaints, unlocked, message };
+  const near = !newBest && r.mode === 'normal' && i.bestNormal > r.score && i.bestNormal - r.score <= Math.max(3, Math.round(i.bestNormal * 0.1)) && r.score > 0;
+  const next = nextUnlockProgress(stats);
+  // Öncelik sırası; ilk ikisi hep gösterilir, diğerleri son mesajla aynıysa sıradakine geçilir.
+  const candidates: { kind: string; text: string; sticky?: boolean }[] = [];
+  if (newPaints.length) candidates.push({ kind: 'paint', text: fmt(STRINGS.newPaint, { paint: paintName(newPaints[0]) }), sticky: true });
+  if (firstMedal && medal) candidates.push({ kind: 'medal', text: fmt(STRINGS.firstMedal, { medal: STRINGS.medals[medal] }), sticky: true });
+  if (near) candidates.push({ kind: 'near', text: fmt(STRINGS.soClose, { n: i.bestNormal - r.score }) });
+  if (next) candidates.push({ kind: 'unlock', text: fmt(STRINGS.unlockProgress, { n: next.remaining, paint: paintName(next.paint) }) });
+  if (i.xpToRank) candidates.push({ kind: 'xp', text: fmt(STRINGS.xpToRank, { n: i.xpToRank.remaining, rank: i.xpToRank.rank }) });
+  candidates.push({ kind: 'delivered', text: fmt(STRINGS.delivered, { n: r.delivered }) });
+  const pick = candidates.find((c) => c.sticky || c.kind !== i.lastKind) ?? candidates[0];
+  const message = pick.text;
+  const messageKind = pick.kind;
+  return { stats, medal, firstMedal, newBest, newPaints, unlocked, message, messageKind };
 }

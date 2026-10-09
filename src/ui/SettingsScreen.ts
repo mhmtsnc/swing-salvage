@@ -19,6 +19,7 @@ export class SettingsScreen {
   private panel: Phaser.GameObjects.Container;
   private sound: Toggle;
   private haptics: Toggle;
+  private shake: Toggle;
   private privacyOpts: Button;
   private policy: Button;
   private howTo: Button;
@@ -36,6 +37,10 @@ export class SettingsScreen {
     const s = getItem('ss.settings');
     this.sound = new Toggle(scene, s.sound, (v) => this.save({ sound: v }));
     this.haptics = new Toggle(scene, s.haptics, (v) => this.save({ haptics: v }));
+    this.shake = new Toggle(scene, getItem('ss.shake'), (v) => {
+      setItem('ss.shake', v);
+      scene.game.events.emit('ss:settings');
+    });
     this.privacyOpts = this.row(STRINGS.privacy, cb.onPrivacyOptions);
     this.howTo = this.row(STRINGS.howToPlay, cb.onHowTo);
     this.policy = this.row(STRINGS.privacyPolicy, cb.onPolicy);
@@ -53,11 +58,12 @@ export class SettingsScreen {
     const rowsKids: Phaser.GameObjects.GameObject[] = [
       label(scene, STRINGS.sound, 20, PALETTE.uiText, '600').setOrigin(0, 0.5),
       label(scene, STRINGS.haptics, 20, PALETTE.uiText, '600').setOrigin(0, 0.5),
+      label(scene, 'Screen shake', 20, PALETTE.uiText, '600').setOrigin(0, 0.5),
     ];
     this.panel = scene.add.container(0, 0, [
       card(scene, CARD_W, 10),
       ...rowsKids,
-      this.sound.root, this.haptics.root,
+      this.sound.root, this.haptics.root, this.shake.root,
       this.privacyOpts.root, this.howTo.root, this.policy.root, this.back.root, this.version,
     ]);
     this.buttons.push(this.privacyOpts, this.howTo, this.policy, this.back);
@@ -78,10 +84,11 @@ export class SettingsScreen {
     const s = getItem('ss.settings');
     this.sound.set(s.sound);
     this.haptics.set(s.haptics);
+    this.shake.set(getItem('ss.shake'));
   }
 
   private layoutRows(): void {
-    const rows = 2 + (this.native ? 1 : 0) + 2;
+    const rows = 3 + (this.native ? 1 : 0) + 2;
     this.height = rows * ROW_H + 130;
     const card0 = this.panel.list[0] as Phaser.GameObjects.Graphics;
     card0.clear();
@@ -95,6 +102,9 @@ export class SettingsScreen {
     y += ROW_H;
     labels[1].setPosition(-CARD_W / 2 + 24, y);
     this.haptics.root.setPosition(CARD_W / 2 - 52, y);
+    y += ROW_H;
+    labels[2].setPosition(-CARD_W / 2 + 24, y);
+    this.shake.root.setPosition(CARD_W / 2 - 52, y);
     y += ROW_H;
     this.privacyOpts.root.setVisible(this.native);
     if (this.native) {

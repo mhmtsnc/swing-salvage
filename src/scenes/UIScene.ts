@@ -1,10 +1,8 @@
 import Phaser from 'phaser';
 import { getTuning, type Tuning } from '../config/tuning';
-import type { PaintId } from '../config/palette';
 import { PRIVACY_URL } from '../config/app';
 import { STRINGS, fmt } from '../config/strings';
-import { getItem, setItem } from '../core/storage';
-import { evaluateUnlocks } from '../core/unlocks';
+import { setItem } from '../core/storage';
 import { toggleTuningPanel } from '../core/tuningPanel';
 import { card, label } from '../ui/components';
 import type { GameScene } from './GameScene';
@@ -14,15 +12,25 @@ import { haptic } from '../core/haptics';
 import type { Button } from '../ui/components';
 import { GameOverPanel, type GameOverData } from '../ui/GameOverPanel';
 import { HangarScreen } from '../ui/HangarScreen';
+import { StatsScreen } from '../ui/StatsScreen';
+import { CrateScreen } from '../ui/CrateScreen';
+import { loadMeta, markSeen, openCrate, setTrail } from '../meta/store';
+import { rankFor } from '../meta/rank';
+import { defById } from '../meta/missions';
+import type { MetaState } from '../core/storage';
 import { Hud } from '../ui/Hud';
 import { Onboarding } from '../ui/Onboarding';
 import { PausePanel } from '../ui/PausePanel';
 import { ReadyScreen } from '../ui/ReadyScreen';
 import { SettingsScreen } from '../ui/SettingsScreen';
 
-type Overlay = 'none' | 'hangar' | 'settings';
+type Overlay = 'none' | 'hangar' | 'settings' | 'stats' | 'crate';
 
 /** Bütün arayüz burada (kamera sarsıntısı HUD'u etkilemesin). Oyun durumunu GameScene.run'dan okur. */
+function missionTextFor(id: string, target: number): string {
+  return defById(id).text.replace('{n}', String(target));
+}
+
 export class UIScene extends Phaser.Scene {
   private T!: Tuning;
   private gs!: GameScene;
@@ -32,6 +40,10 @@ export class UIScene extends Phaser.Scene {
   private pausePanel!: PausePanel;
   private hangar!: HangarScreen;
   private settings!: SettingsScreen;
+  private stats!: StatsScreen;
+  private crates!: CrateScreen;
+  private metaCache: MetaState | null = null;
+  private metaAt = 0;
   private onboarding!: Onboarding;
   private fx!: Fx;
   private overlay: Overlay = 'none';
@@ -50,6 +62,7 @@ export class UIScene extends Phaser.Scene {
       onDaily: () => ev.emit('ss:daily'),
       onHangar: () => this.openOverlay('hangar'),
       onSettings: () => this.openOverlay('settings'),
+      onStats: () => this.openOverlay('stats'),
     });
     this.hud = new Hud(this, () => ev.emit('ss:pause'));
     this.over = new GameOverPanel(this, {
@@ -60,8 +73,23 @@ export class UIScene extends Phaser.Scene {
     });
     this.pausePanel = new PausePanel(this, { onResume: () => ev.emit('ss:resume'), onHome: () => ev.emit('ss:home') });
     this.hangar = new HangarScreen(this, {
-      onSelect: (id) => this.selectPaint(id),
+      onSelect: (kind, id) => this.equip(kind, id),
       onBack: () => this.openOverlay('none'),
+      onOpenCrates: () => this.openOverlay('crate'),
+    });
+    this.stats = new StatsScreen(this, () => this.openOverlay('none'));
+    this.crates = new CrateScreen(this, {
+      open: () => {
+        const r = openCrate();
+        return r ? { reward: r.reward, left: r.meta.crates } : null;
+      },
+      equip: (kind, id) => this.equip(kind, id),
+      close: () => this.openOverlay('hangar'),
+      burst: (x, y, rarity) => {
+        this.fx.confetti(x, y, rarity === 'epic' ? 60 : rarity === 'rare' ? 38 : 22);
+        play(rarity === 'epic' ? 'new_best' : 'medal');
+        haptic(rarity === 'common' || rarity === 'xp' ? 'light' : 'success');
+      },
     });
     this.settings = new SettingsScreen(this, {
       onBack: () => this.openOverlay('none'),
@@ -74,7 +102,7 @@ export class UIScene extends Phaser.Scene {
     this.fx = new Fx(this, 60);
 
     // Sıra: arka → ön
-    for (const root of [this.ready.root, this.hud.root, this.pausePanel.root, this.over.root, this.hangar.root, this.settings.root]) {
+    for (const root of [this.ready.root, this.hud.root, this.pausePanel.root, this.over.root, this.hangar.root, this.settings.root, this.stats.root, this.crates.root]) {
       this.children.bringToTop(root);
     }
 
@@ -96,25 +124,48 @@ export class UIScene extends Phaser.Scene {
     on('ss:gameover', (() => this.openPanel()) as never);
     on('ss:toast', ((t: string) => this.toast(t)) as never);
     on('ss:tune', (() => void toggleTuningPanel()) as never);
+    on('ss:mission', ((text: string) => this.hud.floatTag(this.scale.width / 2, this.scale.height * 0.26, 'MISSION COMPLETE', [text])) as never);
+
+    // Açılış: günlük hediye ve giriş serisi bildirimi
+    const login = this.game.registry.get('ss:login') as { giftCrates: number; usedFreeze: boolean; broke: boolean; login: { streak: number } } | undefined;
+    if (login && login.giftCrates > 0) {
+      this.game.registry.remove('ss:login');
+      this.time.delayedCall(700, () => {
+        this.toast(`Daily gift: +${login.giftCrates} crate${login.giftCrates > 1 ? 's' : ''}  ·  ${login.login.streak}-day streak`);
+        if (login.usedFreeze) this.time.delayedCall(1500, () => this.toast('Streak shield used — your streak is safe'));
+      });
+    }
+  }
+
+  /** Meta bilgisini kare başına okumamak için kısa önbellek. */
+  private meta(): MetaState {
+    const now = this.time.now;
+    if (!this.metaCache || now - this.metaAt > 400) {
+      this.metaCache = loadMeta();
+      this.metaAt = now;
+    }
+    return this.metaCache;
   }
 
   // ───────── geçişler ─────────
 
   private openOverlay(o: Overlay): void {
     this.overlay = o;
-    if (o === 'hangar') this.hangar.refresh(this.unlocked(), getItem('ss.paint') as PaintId);
+    this.metaCache = null;
     this.game.events.emit('ss:overlay', o);
   }
 
-  private unlocked(): PaintId[] {
-    return evaluateUnlocks(getItem('ss.stats'), getItem('ss.daily'));
-  }
-
-  private selectPaint(id: PaintId): void {
-    if (!this.unlocked().includes(id)) return;
-    setItem('ss.paint', id);
-    this.game.events.emit('ss:paint', id);
-    this.hangar.refresh(this.unlocked(), id);
+  /** Hangar/kasa: seçili boyayı veya izi uygular. */
+  private equip(kind: 'paint' | 'trail', id: string): void {
+    if (kind === 'paint') {
+      setItem('ss.paint', id);
+      this.game.events.emit('ss:paint', id);
+    } else {
+      setTrail(id);
+    }
+    markSeen(id);
+    this.metaCache = null;
+    if (this.overlay === 'hangar') this.hangar.refresh();
   }
 
   private againTapped(): void {
@@ -150,6 +201,7 @@ export class UIScene extends Phaser.Scene {
       canSecondChance: this.gs.canSecondChance(),
       daily: daily ? { triesText: fmt(STRINGS.triesLeft, { n: left }) } : null,
       playNormal: daily && left <= 0,
+      ...this.rewardData(run.score),
     };
     this.over.show(data, this.scale.width, this.scale.height, this.T.fx.gameOverInputLock);
     // NEW BEST: konfeti, fanfar; madalya: zil (panel kayarken)
@@ -166,6 +218,27 @@ export class UIScene extends Phaser.Scene {
         haptic('light');
       });
     }
+  }
+
+  /** Ödül ekranı verileri (GameScene.report). */
+  private rewardData(score: number) {
+    const rep = this.gs.report;
+    const fb = rankFor(0);
+    const before = rep?.rankBefore ?? fb;
+    const after = rep?.rankAfter ?? fb;
+    void score;
+    return {
+      grade: rep?.grade ?? ('D' as const),
+      xpGained: rep?.xpGained ?? 0,
+      rankTitle: after.title,
+      rankNumber: after.rank + 1,
+      xpFracBefore: before.into / before.need,
+      xpFracAfter: after.into / after.need,
+      rankedUp: after.rank > before.rank,
+      completed: (rep?.completed ?? []).map((c) => `${missionTextFor(c.id, c.target)}${c.daily ? '  (DAILY)' : ''}`),
+      achievements: (rep?.achievements ?? []).map((a) => a.name),
+      cratesGained: rep?.cratesGained ?? 0,
+    };
   }
 
   // ───────── çerçeve döngüsü ─────────
@@ -191,20 +264,25 @@ export class UIScene extends Phaser.Scene {
     this.pausePanel.show(ov === 'none' && state === 'PAUSED');
     this.hangar.show(ov === 'hangar');
     this.settings.show(ov === 'settings');
+    this.stats.show(ov === 'stats');
+    this.crates.show(ov === 'crate', this.meta().crates);
     if (state !== 'GAME_OVER' && this.over.isOpen) this.over.hide();
 
     const k = this.gs.triesLeftNow();
     this.ready.setDaily(true, this.gs.dailyNumber(), k);
-    this.ready.update(W, H, this.gs.best, this.gs.modeTag());
+    this.ready.update(W, H, this.gs.best, this.gs.modeTag(), this.meta());
     this.hud.update(W, run, this.gs.best, this.gs.modeTag(), {
       combo: this.gs.comboMult,
       storm: this.gs.stormMult,
       ghostDiff: this.gs.ghostDiff(),
       wind: this.gs.windIndicator(),
+      bestFrac: this.gs.mode === 'normal' && this.gs.best > 0 ? run.score / this.gs.best : null,
     });
     this.pausePanel.layout(W, H);
     this.hangar.layout(W, H);
     this.settings.layout(W, H);
+    this.stats.layout(W, H);
+    this.crates.layout(W, H);
     this.over.layout(W, H);
 
     const playing = ov === 'none' && (state === 'PLAYING');
@@ -219,7 +297,7 @@ export class UIScene extends Phaser.Scene {
     // GameScene'e dokunma alanlarını ve modal bayrağını yayınla
     const buttons: Button[] = [
       ...this.ready.buttons, this.hud.pauseBtn, ...this.pausePanel.buttons, ...this.over.buttons,
-      ...this.hangar.buttons, ...this.settings.buttons,
+      ...this.hangar.buttons, ...this.settings.buttons, ...this.stats.buttons, ...this.crates.buttons,
     ];
     const rects = buttons.map((b) => b.rect()).filter((r): r is NonNullable<typeof r> => r !== null);
     this.registry.set('ss:uiRects', rects);

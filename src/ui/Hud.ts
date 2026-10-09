@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { PALETTE, hex } from '../config/palette';
 import { STRINGS, fmt } from '../config/strings';
 import type { Run } from '../game/Run';
-import { Button, card, drawCard, icon, label, setText } from './components';
+import { Button, card, drawBar, drawCard, icon, label, setText } from './components';
 
 const DOT = 8;
 const DOT_GAP = 4;
@@ -15,6 +15,8 @@ export interface HudExtra {
   ghostDiff: number | null;
   /** −1..1: rüzgâr yönü ve şiddeti */
   wind: number;
+  /** Rekora ilerleme (skor/rekor), yoksa null */
+  bestFrac: number | null;
 }
 
 /** Üst kısım: BEST kartı, skor kartı, gemi ilerlemesi, seri noktaları, duraklat ve uçan yazılar. */
@@ -108,6 +110,15 @@ export class Hud {
       this.ghostText.setColor(extra.ghostDiff >= 0 ? PALETTE.uiTeal : PALETTE.uiRed);
     }
     this.ghostText.setPosition(left, 40 + 20 + 14);
+    // rekora ilerleme çubuğu (hedef-gradyan): rekor geçilince altın ve nabız
+    const bf = extra.bestFrac;
+    const g2 = this.dots;
+    if (bf !== null) {
+      const by = 44 + 30 + 6 + 14 + 12 + 18 + 16;
+      const over = bf >= 1;
+      drawBar(g2, W / 2, by, 150, 5, bf, over ? PALETTE.crate : PALETTE.uiTeal, '#CBD4D0');
+      if (over) g2.fillStyle(hex(PALETTE.crate), 0.5 + 0.4 * Math.sin(this.scene.time.now / 160)).fillCircle(W / 2 + 80, by, 4);
+    }
     // rüzgâr oku (BEST kartının altında): yön ve şiddet
     const wa = this.windArrow;
     wa.clear();

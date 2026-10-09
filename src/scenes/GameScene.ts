@@ -28,6 +28,11 @@ import { WeatherFx } from '../game/WeatherFx';
 import { Fx } from '../game/Fx';
 import { Feedback } from '../game/Feedback';
 import { loops } from '../core/audio';
+import { loadMeta, saveMeta } from '../meta/store';
+import { finalizeRun, type RunReport } from '../meta/finalize';
+import { applyPlacement, deltaMetrics, emptyMetrics, type RunMetrics } from '../meta/tally';
+import { wouldComplete, missionText } from '../meta/missions';
+import { rankFor, runXp } from '../meta/rank';
 import { HELI_ORIGIN } from '../art/textures';
 import { ads } from '../core/ads';
 import type { MedalTier } from '../core/summary';
@@ -42,6 +47,19 @@ const CAMERA_SHIFT = 0.35;
 const CAMERA_ZOOM = 1.06;
 const CAMERA_FX_MS = 400;
 const RESUME_SECONDS = 1.0;
+const ASSIST_RADIUS = 0.6;
+const MAGNET_REACH = 2.2;
+const MAGNET_ACCEL = 520;
+const MAGNET_FLOOR = 0.35;
+const RETICLE_RANGE = 170;
+const TRAIL_EVERY = 0.05;
+const TIME_OF_DAY = [
+  { color: 0xffffff, alpha: 0 },
+  { color: 0xffc48a, alpha: 0.38 },
+  { color: 0x9a86c8, alpha: 0.5 },
+  { color: 0x3a4a7a, alpha: 0.6 },
+  { color: 0xf2b6c4, alpha: 0.34 },
+];
 const SAFE_HEIGHT = 420;
 
 export class GameScene extends Phaser.Scene {
@@ -58,14 +76,26 @@ export class GameScene extends Phaser.Scene {
   private lastRunSec = 0;
   private rewardedThisGameOver = false;
   private resumeT = 0;
+  private reticle!: Phaser.GameObjects.Graphics;
+  private tod!: Phaser.GameObjects.Rectangle;
+  private todTween: Phaser.Tweens.Tween | null = null;
+  private trailT = 0;
+  private assistLevel = 1;
+  private trailCache = 'none';
+  /** v1.2: görev/başarım için canlı koşu metrikleri */
+  private metrics: RunMetrics = emptyMetrics();
+  private countedMetrics: RunMetrics | null = null;
+  private prevHistScore: number | null = null;
+  private notifiedMissions = new Set<string>();
+  report: RunReport | null = null;
   private ropeLoad = new RopeLoad();
   private creakAt = 0;
   private runTime = 0;
   private ghostRec!: GhostRecorder;
   private ghostData: GhostData | null = null;
   private ghostImg!: Phaser.GameObjects.Image;
-  private counted: { delivered: number; perfects: number; runCounted: boolean; medal: MedalTier | null } = {
-    delivered: 0, perfects: 0, runCounted: false, medal: null,
+  private counted: { delivered: number; perfects: number; runCounted: boolean; medal: MedalTier | null; score: number } = {
+    delivered: 0, perfects: 0, runCounted: false, medal: null, score: 0,
   };
   private lastShare: ShareInput | null = null;
   private T!: Tuning;
@@ -117,6 +147,13 @@ export class GameScene extends Phaser.Scene {
     this.fixedSeed = Number.isFinite(seedParam) && q.get('seed') ? seedParam : null;
     this.weatherFx = new WeatherFx(this);
     this.fx = new Fx(this);
+    this.reticle = this.add.graphics().setDepth(9.8);
+    this.tod = this.add
+      .rectangle(0, 0, 10, 10, 0xffffff)
+      .setOrigin(0, 0)
+      .setDepth(16.4)
+      .setBlendMode(Phaser.BlendModes.MULTIPLY)
+      .setAlpha(0);
     this.ghostRec = new GhostRecorder(this.T.ghost.sampleEvery);
     this.ghostImg = this.add
       .image(0, 0, `heli_${getItem('ss.paint')}`)
@@ -125,6 +162,8 @@ export class GameScene extends Phaser.Scene {
       .setDepth(14.8)
       .setVisible(false);
     this.loadGhost();
+    this.setTimeOfDay(0, true);
+    this.refreshCosmetics();
     this.fb = new Feedback(this, this.fx, this.T);
     this.makeRngs();
     this.rainLevel = this.diffAt(this.startScore).rain;
@@ -155,6 +194,7 @@ export class GameScene extends Phaser.Scene {
     this.game.events.on('ss:resume', this.resumeGame, this);
     this.game.events.on('ss:home', this.home, this);
     this.game.events.on('ss:paint', this.onPaint, this);
+    this.game.events.on('ss:overlay', this.refreshCosmetics, this);
     this.game.events.on('ss:daily', this.armDaily, this);
     this.game.events.on('ss:share', this.shareRun, this);
     this.game.events.on('ss:secondChance', this.secondChance, this);
@@ -176,6 +216,7 @@ export class GameScene extends Phaser.Scene {
       this.game.events.off('ss:resume', this.resumeGame, this);
       this.game.events.off('ss:home', this.home, this);
       this.game.events.off('ss:paint', this.onPaint, this);
+      this.game.events.off('ss:overlay', this.refreshCosmetics, this);
       this.game.events.off('ss:daily', this.armDaily, this);
       this.game.events.off('ss:share', this.shareRun, this);
       this.game.events.off('ss:secondChance', this.secondChance, this);
@@ -273,6 +314,7 @@ export class GameScene extends Phaser.Scene {
   private onPaint(id: string): void {
     this.heli.setPaint(id);
     this.ghostImg.setTexture(`heli_${id}`);
+    this.refreshCosmetics();
   }
 
   /** Onboarding için: dünya koordinatları. */
@@ -346,7 +388,13 @@ export class GameScene extends Phaser.Scene {
     this.ghostRec.reset();
     this.ropeLoad.reset();
     this.loadGhost();
-    this.counted = { delivered: 0, perfects: 0, runCounted: false, medal: null };
+    this.setTimeOfDay(0, true);
+    this.counted = { delivered: 0, perfects: 0, runCounted: false, medal: null, score: 0 };
+    this.metrics = emptyMetrics();
+    this.countedMetrics = null;
+    this.prevHistScore = null;
+    this.notifiedMissions = new Set();
+    this.report = null;
     this.rewardedThisGameOver = false;
     this.stepper.reset();
     const cam = this.cameras.main;
@@ -455,6 +503,7 @@ export class GameScene extends Phaser.Scene {
       }
     }
     if (carried?.body) carried.preSpeed = this.relMotion(carried.body).speed;
+    this.assistHook();
 
     this.matter.step(STEP_MS);
     this.simTime += STEP_MS / 1000;
@@ -472,6 +521,108 @@ export class GameScene extends Phaser.Scene {
     this.handleSettling();
     this.checkFailures();
     this.checkSwap();
+  }
+
+  // ───────── v1.2: kavrama yardımı, gün döngüsü, iz efekti ─────────
+
+  /** Yeni oyuncuya yardım: ilk 10 koşuda 1 → 0 (yakalama yarıçapı ve kanca manyetizması). */
+  private assist(): number {
+    return this.assistLevel;
+  }
+
+  /** Depolamayı kare başına okumamak için: koşu sayısı ve iz seçimi önbelleği. */
+  private refreshCosmetics(): void {
+    this.assistLevel = Phaser.Math.Clamp(1 - getItem('ss.stats').runs / 10, 0, 1);
+    this.trailCache = loadMeta().trail;
+  }
+
+  private pickupRadius(): number {
+    return this.T.hook.pickupRadius * (1 + ASSIST_RADIUS * this.assist());
+  }
+
+  /** Kanca, yüzen kargonun üst-orta noktasına yaklaştıkça hafifçe çekilir (hedeflemesi zor kavrama şikâyeti). */
+  private assistHook(): void {
+    const c = this.active;
+    if (!c || c.state !== 'FLOATING' || !this.rope.hook || this.run.state !== 'PLAYING') return;
+    const top = c.topCenter();
+    const hp = this.rope.hook.position;
+    const dx = top.x - hp.x;
+    const dy = top.y - hp.y;
+    const d = Math.hypot(dx, dy);
+    const reach = this.pickupRadius() * MAGNET_REACH;
+    if (d > reach || d < 1) return;
+    const strength = MAGNET_ACCEL * (MAGNET_FLOOR + (1 - MAGNET_FLOOR) * this.assist()) * (1 - d / reach);
+    this.matter.body.setVelocity(this.rope.hook, {
+      x: this.rope.hook.velocity.x + toStepAcc((dx / d) * strength),
+      y: this.rope.hook.velocity.y + toStepAcc((dy / d) * strength),
+    });
+  }
+
+  /** Kancanın yaklaştığı yüzen kargonun etrafında halka işareti. */
+  private drawReticle(): void {
+    const g = this.reticle;
+    g.clear();
+    const c = this.active;
+    if (!c || c.state !== 'FLOATING' || !this.rope.hook || this.run.state !== 'PLAYING') return;
+    const top = c.topCenter();
+    const hp = this.rope.hook.position;
+    const d = Math.hypot(top.x - hp.x, top.y - hp.y);
+    if (d > RETICLE_RANGE) return;
+    const k = 1 - d / RETICLE_RANGE;
+    const r = this.pickupRadius();
+    const hot = d < r;
+    g.lineStyle(3, hot ? 0xf3c44e : 0xffffff, 0.35 + 0.6 * k);
+    g.strokeCircle(top.x, top.y, r + (1 - k) * 10);
+    if (hot) g.fillStyle(0xf3c44e, 0.25).fillCircle(top.x, top.y, r);
+  }
+
+  /** Her gemi farklı ışıkta: gün → altın saat → alacakaranlık → gece → şafak. */
+  private setTimeOfDay(index: number, instant: boolean): void {
+    const p = TIME_OF_DAY[index % TIME_OF_DAY.length];
+    this.todTween?.stop();
+    if (instant) {
+      this.tod.setFillStyle(p.color).setAlpha(p.alpha);
+      return;
+    }
+    const from = { color: this.tod.fillColor, alpha: this.tod.alpha };
+    const state = { k: 0 };
+    this.todTween = this.tweens.add({
+      targets: state,
+      k: 1,
+      duration: (this.T.ship.swapExitTime + this.T.ship.swapEnterTime) * 1000,
+      onUpdate: () => {
+        const a = Phaser.Display.Color.IntegerToColor(from.color);
+        const b = Phaser.Display.Color.IntegerToColor(p.color);
+        const c = Phaser.Display.Color.Interpolate.ColorWithColor(a, b, 100, state.k * 100);
+        this.tod.setFillStyle(Phaser.Display.Color.GetColor(c.r, c.g, c.b)).setAlpha(from.alpha + (p.alpha - from.alpha) * state.k);
+      },
+    });
+  }
+
+  /** Helikopter arkasında seçili iz efekti. */
+  private emitTrail(dt: number): void {
+    const trail = this.trailId;
+    if (trail === 'none') return;
+    const run = this.run;
+    if (run.state !== 'PLAYING' && run.state !== 'SWAPPING' && run.state !== 'READY') return;
+    this.trailT += dt;
+    if (this.trailT < TRAIL_EVERY) return;
+    this.trailT = 0;
+    const x = this.heli.x - this.heli.facing * 70;
+    const y = this.heli.y - 6;
+    const o = { speed: [10, 50] as [number, number], angle: [-180, 180] as [number, number], gravity: 20, life: [0.5, 0.9] as [number, number], scale: [0.7, 1.1] as [number, number] };
+    switch (trail) {
+      case 'sparks': this.fx.burst('sparkle', x, y, 1, { ...o, tint: 0xf3c44e, gravity: 120 }); break;
+      case 'bubbles': this.fx.burst('drop', x, y, 1, { ...o, gravity: -40, tint: 0xd6ebe8 }); break;
+      case 'smoke': this.fx.burst('dust', x, y, 1, { ...o, gravity: -15, tint: 0x6d7c80, scale: [0.9, 1.5] }); break;
+      case 'leaves': this.fx.burst('dust', x, y, 1, { ...o, gravity: 90, tint: 0x8fa65a, spin: 5 }); break;
+      case 'confetti': this.fx.burst(`confetti_${Math.floor(Math.random() * 6)}`, x, y, 1, { ...o, gravity: 140, spin: 8 }); break;
+      case 'stars': this.fx.burst('sparkle', x, y, 1, { ...o, tint: 0xffffff, spin: 3 }); break;
+    }
+  }
+
+  private get trailId(): string {
+    return this.trailCache;
   }
 
   /** Kendi rekoruna karşı hayalet: normal modda, kayıtlı en iyi koşu. */
@@ -540,6 +691,7 @@ export class GameScene extends Phaser.Scene {
     if (!c.body) return;
     this.fb.snap(c.body.position.x, c.body.position.y);
     c.damaged = true;
+    this.metrics.snaps++;
     c.placement = {
       grade: 'normal', sweet: false, perfect: false, hard: true, alignDx: 99, angleDeg: 90, impact: this.T.rules.hardLandingImpact,
     };
@@ -570,7 +722,7 @@ export class GameScene extends Phaser.Scene {
     if (!c || c.state !== 'FLOATING' || !this.rope.hook || this.run.state !== 'PLAYING') return;
     const top = c.topCenter();
     const hp = this.rope.hook.position;
-    if (Math.hypot(hp.x - top.x, hp.y - top.y) < this.T.hook.pickupRadius) {
+    if (Math.hypot(hp.x - top.x, hp.y - top.y) < this.pickupRadius()) {
       c.pickUp(this.matter, this.simTime);
       c.gustHook = this.weather.phase === 'ACTIVE';
       this.ropeLoad.reset();
@@ -680,6 +832,22 @@ export class GameScene extends Phaser.Scene {
         this.T.scoring,
       );
       this.run.commit(res, grade);
+      this.metrics = applyPlacement(this.metrics, {
+        type: c.type,
+        grade,
+        sweet: c.placement?.sweet ?? false,
+        saved: c.saved,
+        closeCall: c.closeCall,
+        gustLanding: c.gustLanding,
+        swingPoints: res.parts.find((p) => p.key === 'swing')?.points ?? 0,
+        speedyPoints: res.parts.find((p) => p.key === 'speedy')?.points ?? 0,
+        hard,
+        streak: res.perfectStreak,
+        clean: res.cleanStreak,
+        score: this.run.score,
+        ships: this.run.shipIndex + 1,
+      });
+      this.notifyMissions();
       this.ghostRec.score(this.runTime, this.run.score);
       this.fb.placed(c.body.position.x, c.body.position.y, {
         grade,
@@ -697,6 +865,23 @@ export class GameScene extends Phaser.Scene {
         hard,
       });
     }
+  }
+
+  /** Koşu içinde biten görevleri canlı bildirir (kalıcı işleme koşu sonunda). */
+  private notifyMissions(): void {
+    const meta = loadMeta();
+    const m = { ...this.metrics, runs: 1 };
+    for (const id of wouldComplete(meta.missions, m)) {
+      if (this.notifiedMissions.has(id)) continue;
+      this.notifiedMissions.add(id);
+      const slot = meta.missions.find((x) => x.id === id);
+      if (slot) this.game.events.emit('ss:mission', missionText(slot));
+    }
+  }
+
+  /** Meta bilgisi (UI için). */
+  get metaNow() {
+    return loadMeta();
   }
 
   /** Yerleştirme ödüllerinin kısa etiketleri (öncelik sırasıyla). */
@@ -796,7 +981,7 @@ export class GameScene extends Phaser.Scene {
     const cy = this.H / 2 + (at.y - this.H / 2) * CAMERA_SHIFT;
     cam.pan(cx, cy, CAMERA_FX_MS, 'Sine.easeInOut');
     cam.zoomTo(CAMERA_ZOOM, CAMERA_FX_MS, 'Sine.easeInOut');
-    cam.shake(250, this.T.fx.shakeFail / this.W);
+    this.fx.shake(cam, this.T.fx.shakeFail, 250, this.W);
   }
 
   // ───────── gemi değişimi (§7.6) ─────────
@@ -805,6 +990,7 @@ export class GameScene extends Phaser.Scene {
     if (this.run.state !== 'PLAYING' || !this.run.shipFull) return;
     if (this.cargos.some((c) => c.state === 'SETTLING' || c.state === 'FLOATING' || c.state === 'CARRIED')) return;
     const bonus = this.run.beginSwap();
+    this.setTimeOfDay(this.run.shipIndex + 1, false);
     this.fb.shipFull(this.W * 0.3, this.seaY - 140);
     this.game.events.emit('ss:shipFull', { bonus });
 
@@ -889,10 +1075,14 @@ export class GameScene extends Phaser.Scene {
     this.weatherFx.setRain(this.rainLevel);
     this.weatherFx.update(this.weather, this.W, this.H, delta / 1000);
     this.fx.update(delta / 1000);
+    this.drawReticle();
+    this.tod.setSize(this.W, this.H);
+    this.emitTrail(delta / 1000);
     loops.update(
       run.state === 'PLAYING' || run.state === 'SWAPPING' || run.state === 'READY',
       Math.hypot(this.heli.vx, this.heli.vy) / this.T.heli.maxSpeed,
       this.rainLevel,
+      Math.min(1.5, Math.abs(this.weather.windSign(run.progress)) * (this.diffAt(run.progress).windBase / 0.4) + this.weather.envelope() * 0.8),
     );
 
     if (this.debugText) {
@@ -923,7 +1113,12 @@ export class GameScene extends Phaser.Scene {
     const prevBest = getItem('ss.best');
     this.lastRunSec = this.runStartMs ? (performance.now() - this.runStartMs) / 1000 : 0;
     this.rewardedThisGameOver = false;
+    const meta0 = loadMeta();
+    const xpPreview = runXp(run.score - (this.counted.runCounted ? 0 : 0), run.delivered, run.perfects);
+    const rankNow = rankFor(meta0.xp + Math.max(0, xpPreview - 0));
     const sum = summarizeRun({
+      lastKind: meta0.lastMsgKind,
+      xpToRank: { remaining: Math.max(1, rankNow.need - rankNow.into), rank: rankNow.rank + 1 },
       already: { runCounted: this.counted.runCounted, medal: this.counted.medal },
       result: {
         score: run.score,
@@ -947,7 +1142,38 @@ export class GameScene extends Phaser.Scene {
       }
       if (!this.counted.runCounted) ads.noteRunFinished();
     }
-    this.counted = { delivered: run.delivered, perfects: run.perfects, runCounted: true, medal: sum.medal ?? this.counted.medal };
+    // v1.2: görevler, XP/rütbe, başarımlar, kasalar
+    const total: RunMetrics = { ...this.metrics, ships: run.shipIndex + 1, score: run.score, runs: 1 };
+    const delta = deltaMetrics(total, this.countedMetrics);
+    if (this.counted.runCounted) delta.runs = 0;
+    const fin = finalizeRun({
+      meta: meta0,
+      metrics: delta,
+      run: {
+        score: run.score,
+        delivered: run.delivered,
+        perfects: run.perfects,
+        scoreDelta: run.score - (this.counted.runCounted ? this.counted.score : 0),
+        deliveredDelta: run.delivered - this.counted.delivered,
+        perfectsDelta: run.perfects - this.counted.perfects,
+        mode: run.mode,
+        date: today,
+        continued: this.counted.runCounted,
+        prevScore: this.prevHistScore,
+      },
+      stats: { ...sum.stats },
+      bestScore: Math.max(prevBest, run.score),
+      dailyDays: new Set(daily.playedDays).size,
+    });
+    if (sum.messageKind === 'xp') {
+      sum.message = fmt(STRINGS.xpToRank, { n: Math.max(1, fin.report.rankAfter.need - fin.report.rankAfter.into), rank: fin.report.rankAfter.rank + 1 });
+    }
+    fin.meta.lastMsgKind = sum.messageKind;
+    if (this.persist) saveMeta(fin.meta);
+    this.report = fin.report;
+    this.prevHistScore = run.score;
+    this.countedMetrics = total;
+    this.counted = { delivered: run.delivered, perfects: run.perfects, runCounted: true, medal: sum.medal ?? this.counted.medal, score: run.score };
     this.summary = sum;
     this.newBest = sum.newBest || (this.newBest && run.mode === 'normal');
     this.best = Math.max(prevBest, sum.newBest ? run.score : 0);
@@ -961,6 +1187,7 @@ export class GameScene extends Phaser.Scene {
       death: run.failKind,
       storeUrl: STORE_URL,
     };
+    this.refreshCosmetics();
     this.game.events.emit('ss:gameover');
   }
 

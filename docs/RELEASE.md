@@ -65,7 +65,7 @@ Yeni kişisel geliştirici hesapları production'a çıkmadan önce **kapalı te
 4. Süre dolunca **Production'a erişim başvurusu** yap, sonra production sürümünü yayınla.
 
 ## 7. Her güncellemede
-1. `android/app/build.gradle` içinde **`versionCode`'u artır** (şimdi 1; her yüklemede +1, geri düşemez). `versionName` ve `src/config/app.ts` içindeki `VERSION` değerini birlikte güncelle.
+1. `android/app/build.gradle` içinde **`versionCode`'u artır** (şimdi 2; her yüklemede +1, geri düşemez). `versionName` ve `src/config/app.ts` içindeki `VERSION` değerini birlikte güncelle.
 2. `npm test && npm run build && npm run android:sync`
 3. Yeni imzalı AAB üret, Play Console'a yükle.
 

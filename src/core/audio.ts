@@ -118,6 +118,7 @@ export function initAudio(): void {
 
 const ROTOR_VOLUME = 0.05;
 const RAIN_VOLUME = 0.05;
+const WIND_VOLUME = 0.07;
 const LFO_MIN = 14;
 const LFO_MAX = 20;
 
@@ -126,6 +127,8 @@ class Loops {
   private rotorGain!: GainNode;
   private lfo!: OscillatorNode;
   private rainGain!: GainNode;
+  private windGain!: GainNode;
+  private windFilter!: BiquadFilterNode;
 
   private noiseBuffer(): AudioBuffer {
     const c = ctx();
@@ -183,6 +186,21 @@ class Loops {
     lp2.connect(this.rainGain);
     this.rainGain.connect(c.destination);
     rainSrc.start();
+
+    // rüzgâr uğultusu: bant geçiren gürültü; şiddet arttıkça hem ses hem frekans yükselir
+    const windSrc = c.createBufferSource();
+    windSrc.buffer = noise;
+    windSrc.loop = true;
+    this.windFilter = c.createBiquadFilter();
+    this.windFilter.type = 'bandpass';
+    this.windFilter.frequency.value = 350;
+    this.windFilter.Q.value = 0.9;
+    this.windGain = c.createGain();
+    this.windGain.gain.value = 0;
+    windSrc.connect(this.windFilter);
+    this.windFilter.connect(this.windGain);
+    this.windGain.connect(c.destination);
+    windSrc.start();
     this.built = true;
   }
 
@@ -190,10 +208,11 @@ class Loops {
     if (!this.built) return;
     this.rotorGain.gain.value = 0;
     this.rainGain.gain.value = 0;
+    this.windGain.gain.value = 0;
   }
 
   /** `active`: koşu sürüyor mu; `speedFrac`: helikopter hızı / maxSpeed; `rain`: 0..1 */
-  update(active: boolean, speedFrac: number, rain: number): void {
+  update(active: boolean, speedFrac: number, rain: number, wind = 0): void {
     if (!soundOn || !unlocked || document.hidden) {
       this.mute();
       return;
@@ -203,6 +222,8 @@ class Loops {
     this.rotorGain.gain.setTargetAtTime(active ? ROTOR_VOLUME : ROTOR_VOLUME * 0.5, t, 0.1);
     this.lfo.frequency.setTargetAtTime(LFO_MIN + (LFO_MAX - LFO_MIN) * Math.min(1, Math.max(0, speedFrac)), t, 0.1);
     this.rainGain.gain.setTargetAtTime(RAIN_VOLUME * rain, t, 0.3);
+    this.windGain.gain.setTargetAtTime(active ? WIND_VOLUME * Math.min(1.5, wind) : 0, t, 0.25);
+    this.windFilter.frequency.setTargetAtTime(280 + 420 * Math.min(1.5, wind), t, 0.25);
   }
 }
 

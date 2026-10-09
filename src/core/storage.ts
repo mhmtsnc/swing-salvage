@@ -26,6 +26,53 @@ export interface GhostData {
   scores: [number, number][];
 }
 
+export interface MissionSlot {
+  id: string;
+  /** 0 kolay, 1 orta, 2 zor */
+  tier: 0 | 1 | 2;
+  progress: number;
+}
+
+export interface Lifetime {
+  flawless: number;
+  sweet: number;
+  saved: number;
+  closeCall: number;
+  gustDrops: number;
+  swing: number;
+  speedy: number;
+  pianos: number;
+  balls: number;
+  snaps: number;
+  bestStreak: number;
+  bestClean: number;
+  bestScore: number;
+  gradeS: number;
+  missionsDone: number;
+  cratesOpened: number;
+}
+
+export interface MetaState {
+  xp: number;
+  missions: MissionSlot[];
+  /** Görev seçimi için tohum sayacı */
+  missionCounter: number;
+  daily: { date: string; id: string; progress: number; done: boolean } | null;
+  /** Açılmamış kasa sayısı */
+  crates: number;
+  /** Kasadan açılan kozmetik kimlikleri */
+  owned: string[];
+  /** Henüz görülmemiş (NEW rozeti) kimlikler */
+  fresh: string[];
+  trail: string;
+  achievements: string[];
+  login: { last: string; streak: number; freezes: number; bestStreak: number };
+  counters: Lifetime;
+  /** En iyi 5 koşu */
+  history: { score: number; grade: string; date: string; mode: string }[];
+  lastMsgKind: string;
+}
+
 export interface StorageSchema {
   'ss.v': number;
   'ss.best': number;
@@ -38,6 +85,8 @@ export interface StorageSchema {
   'ss.ads': { lastInterstitialAt: number; runsSinceInterstitial: number };
   'ss.tuning': Record<string, unknown>;
   'ss.ghost': GhostData;
+  'ss.meta': MetaState;
+  'ss.shake': boolean;
 }
 export type StorageKey = keyof StorageSchema;
 
@@ -59,6 +108,25 @@ export const DEFAULTS: StorageSchema = {
   'ss.ads': { lastInterstitialAt: 0, runsSinceInterstitial: 0 },
   'ss.tuning': {},
   'ss.ghost': { score: 0, dt: 0.2, samples: [], scores: [] },
+  'ss.meta': {
+    xp: 0,
+    missions: [],
+    missionCounter: 0,
+    daily: null,
+    crates: 0,
+    owned: [],
+    fresh: [],
+    trail: 'none',
+    achievements: [],
+    login: { last: '', streak: 0, freezes: 0, bestStreak: 0 },
+    counters: {
+      flawless: 0, sweet: 0, saved: 0, closeCall: 0, gustDrops: 0, swing: 0, speedy: 0, pianos: 0, balls: 0,
+      snaps: 0, bestStreak: 0, bestClean: 0, bestScore: 0, gradeS: 0, missionsDone: 0, cratesOpened: 0,
+    },
+    history: [],
+    lastMsgKind: '',
+  },
+  'ss.shake': true,
 };
 
 const memory = new Map<string, string>();

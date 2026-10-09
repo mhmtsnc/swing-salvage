@@ -55,6 +55,15 @@ export const PAINTS = [
   { id: 'navy', color: '#2F4858' },
   { id: 'paper', color: '#F2ECDF' },
   { id: 'gold', color: '#D9A82E' },
+  // v1.2: kasa (crate) ile açılanlar
+  { id: 'coral', color: '#F08A7B' },
+  { id: 'lavender', color: '#A99BD6' },
+  { id: 'teal', color: '#2F8F8B' },
+  { id: 'charcoal', color: '#3B4547' },
+  { id: 'tangerine', color: '#F28C28' },
+  { id: 'candy', color: '#F27FB0' },
+  { id: 'midnight', color: '#1D2C5E' },
+  { id: 'aurora', color: '#58E6C4' },
 ] as const;
 export type PaintId = (typeof PAINTS)[number]['id'];
 

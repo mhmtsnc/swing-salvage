@@ -3,6 +3,8 @@ import { makeAllTextures } from '../art/textures';
 import { getTuning } from '../config/tuning';
 import { initAudio, refreshAudioSettings } from '../core/audio';
 import { refreshHapticSettings } from '../core/haptics';
+import { refreshShakeSetting } from '../game/Fx';
+import { initMeta } from '../meta/store';
 import { ads } from '../core/ads';
 import '@fontsource/fredoka/500.css';
 import '@fontsource/fredoka/600.css';
@@ -16,12 +18,15 @@ export class BootScene extends Phaser.Scene {
   create(): void {
     const start = (): void => {
       makeAllTextures(this, getTuning());
+      refreshShakeSetting();
+      this.game.registry.set('ss:login', initMeta().login);
       initAudio();
       void ads.init();
       refreshHapticSettings();
       this.game.events.on('ss:settings', () => {
         refreshAudioSettings();
         refreshHapticSettings();
+        refreshShakeSetting();
       });
       if (new URLSearchParams(location.search).get('debug') === 'stack') {
         this.scene.launch('StackDebugScene');

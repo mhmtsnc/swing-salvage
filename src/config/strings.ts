@@ -23,6 +23,7 @@ export const STRINGS = {
   newPaint: 'New paint unlocked: {paint}!',
   firstMedal: 'First {medal} medal!',
   delivered: 'Crates delivered: {n}',
+  xpToRank: '{n} XP to rank {rank}',
   again: 'AGAIN',
   playNormal: 'PLAY NORMAL',
   secondChance: 'SECOND CHANCE',
@@ -62,6 +63,14 @@ export const STRINGS = {
     navy: 'NAVY',
     paper: 'PAPER',
     gold: 'GOLD',
+    coral: 'CORAL',
+    lavender: 'LAVENDER',
+    teal: 'TEAL',
+    charcoal: 'CHARCOAL',
+    tangerine: 'TANGERINE',
+    candy: 'CANDY',
+    midnight: 'MIDNIGHT',
+    aurora: 'AURORA',
   },
 } as const;
 
