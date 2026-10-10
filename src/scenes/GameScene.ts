@@ -202,6 +202,7 @@ export class GameScene extends Phaser.Scene {
     document.addEventListener('visibilitychange', this.onVisibility);
 
     if (q.get('debug') === '1') {
+      (window as unknown as { __ss?: unknown }).__ss = this; // sadece ?debug=1: otomatik test/gözlem için
       this.matter.world.createDebugGraphic();
       this.debugText = this.add
         .text(8, 8, '', { fontFamily: 'monospace', fontSize: '14px', color: PALETTE.uiText })

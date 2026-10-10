@@ -98,3 +98,8 @@ V1.2 · Ayarlar · "Screen shake" anahtarı (`ss.shake`); varsayılan açık · 
 V1.2 · Rüzgâr sesi · Üçüncü döngü sesi: bant geçiren gürültü, şiddete göre ses ve frekans · atmosfer, müzik değil (§18)
 V1.2 · Çifte sayım · Meta (görev/XP/başarım/geçmiş) SECOND CHANCE sonrası ikinci bitişte yalnızca fark olarak işlenir (`deltaMetrics`) · çifte sayım olmasın
 V1.2 · Yapılmayanlar · Bildirimler (yeni bağımlılık), liderlik tablosu/bulut kaydı (§18), reklam kuralları değiştirilmedi · kapsam dışı
+V1.2.1 · Gerçek oynanış testi · Başsız Chromium (yazılım WebGL, 390×844) ile oyun açıldı ve sürüklenerek oynandı; JS hatası yok, kancalama/taşıma/teslim/puan çalışıyor · CLAUDE.md "tarayıcı otomasyonu yok" kuralı kullanıcının "oynayamıyor musun?" sorusu üzerine bu oturumda bilinçli olarak aşıldı, kural dosyada değiştirilmedi
+V1.2.1 · Hata: ağır ekranlar her karede show() · Hangar/Stats/Crate her karede yeniden açılıyordu (sayfa 1'e dönüyor, kasa açılışı sıfırlanıyordu); artık yalnızca görünürlük değişince (`UIScene.edge`) · gerçek oynanışta yakalandı
+V1.2.1 · Game over düzeni · NEW BEST rozeti alt başlığı örtüyordu ve SHARE/HOME panel dışına taşıyordu; rozet skorun altına alındı, panel +30 px · ekran görüntüsünde yakalandı
+V1.2.1 · Helikopter sınırları · marginX 55→70, minY 140→175 (HUD'u örtmesin, kuyruk ekran dışına taşmasın) · ekran görüntüsünde yakalandı
+V1.2.1 · Debug · `?debug=1` ile `window.__ss` (GameScene) açılır; otomatik test içindir · yalnızca URL bayrağıyla

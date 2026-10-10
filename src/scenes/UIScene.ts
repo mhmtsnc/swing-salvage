@@ -137,6 +137,15 @@ export class UIScene extends Phaser.Scene {
     }
   }
 
+  private edges: Record<string, boolean> = {};
+
+  /** `visible` değiştiğinde bir kez çağırır. */
+  private edge(key: string, visible: boolean, fn: (v: boolean) => void): void {
+    if (this.edges[key] === visible) return;
+    this.edges[key] = visible;
+    fn(visible);
+  }
+
   /** Meta bilgisini kare başına okumamak için kısa önbellek. */
   private meta(): MetaState {
     const now = this.time.now;
@@ -262,10 +271,11 @@ export class UIScene extends Phaser.Scene {
     this.ready.show(showReady);
     this.hud.show(showHud);
     this.pausePanel.show(ov === 'none' && state === 'PAUSED');
-    this.hangar.show(ov === 'hangar');
-    this.settings.show(ov === 'settings');
-    this.stats.show(ov === 'stats');
-    this.crates.show(ov === 'crate', this.meta().crates);
+    // Ağır ekranlar yalnızca görünürlük DEĞİŞİNCE açılır/kapanır (her kare show() sayfayı ve kasa durumunu sıfırlıyordu)
+    this.edge('hangar', ov === 'hangar', (v) => this.hangar.show(v));
+    this.edge('settings', ov === 'settings', (v) => this.settings.show(v));
+    this.edge('stats', ov === 'stats', (v) => this.stats.show(v));
+    this.edge('crate', ov === 'crate', (v) => this.crates.show(v, loadMeta().crates));
     if (state !== 'GAME_OVER' && this.over.isOpen) this.over.hide();
 
     const k = this.gs.triesLeftNow();

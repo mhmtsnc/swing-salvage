@@ -129,7 +129,7 @@ export class GameOverPanel {
     this.sub.setText(sub);
     this.scoreValue.setText(String(d.score));
     const toBest = d.best - d.score;
-    this.bestLabel.setText(d.newBest || d.best === 0 ? `${STRINGS.best} ${d.best}` : `${STRINGS.best} ${d.best}  ·  ${Math.max(0, toBest)} to go`);
+    this.bestLabel.setText(d.newBest ? '' : d.best === 0 ? `${STRINGS.best} ${d.best}` : `${STRINGS.best} ${d.best}  ·  ${Math.max(0, toBest)} to go`);
     this.badge.setVisible(d.newBest);
     this.message.setText(d.message);
     this.tries.setText(d.daily?.triesText ?? '').setVisible(!!d.daily);
@@ -179,7 +179,7 @@ export class GameOverPanel {
     const scH = d.canSecondChance ? 74 : 0;
     const dailyH = d.daily ? 22 : 0;
     const listH = shown.length ? shown.length * 20 + 10 : 0;
-    this.bodyH = 470 + scH + dailyH + listH;
+    this.bodyH = 500 + scH + dailyH + listH;
     const top = -this.bodyH / 2;
     this.bg.clear();
     this.bg.fillStyle(hex(PALETTE.shadow), 0.1).fillRoundedRect(-PANEL_W / 2 - 1, top + 7, PANEL_W + 2, this.bodyH, 18);
@@ -195,7 +195,7 @@ export class GameOverPanel {
     this.bestLabel.setPosition(0, rowY + 36);
     this.gradeDisc.setPosition(124, rowY);
     this.gradeLetter.setPosition(124, rowY);
-    this.badge.setPosition(0, rowY - 58);
+    this.badge.setPosition(0, rowY + 40);
 
     // XP / rütbe çubuğu (dolum animasyonlu) ve rekora ilerleme
     const meterY = top + 218;

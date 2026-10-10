@@ -12,7 +12,7 @@ export const TUNING = {
     accelTau: 0.16,                // s
     maxAccel: 1600,                // px/s^2
     dragRatio: 1.0,
-    marginX: 55, minY: 140, maxYAboveSea: 165,   // y <= seaY - 165
+    marginX: 70, minY: 175, maxYAboveSea: 165,   // y <= seaY - 165
     tiltPerVx: 0.0008, tiltMax: 0.30, tiltSmooth: 10, flipHysteresisVx: 40,
     winchOffsetY: 31,
     hitboxW: 110, hitboxH: 50,
